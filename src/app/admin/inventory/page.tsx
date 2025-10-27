@@ -469,13 +469,13 @@ const [selectedTL, setSelectedTL] = useState<string | null>(null);
 
   // 🔒 تطبيق قيم الفلاتر المقفولة كافتراض
   useEffect(() => {
-    if (!filtersLoading && userFilters) {
-      if (lockedRegion) setSelectedRegion(userFilters.default_region?.[0] ?? null);
-if (lockedCity) setSelectedCity(userFilters.default_city?.[0] ?? null);
-if (lockedStore) setSelectedStore(userFilters.allowed_markets?.[0] ?? null);
-if (lockedTL) setSelectedTL(userFilters.Team_leader?.[0] ?? null);
-    }
-  }, [filtersLoading, userFilters, lockedRegion, lockedCity, lockedStore, lockedTL]);
+  if (!filtersLoading && userFilters) {
+    if (lockedRegion) setSelectedRegion(userFilters.default_region?.[0] ?? null);
+    if (lockedCity) setSelectedCity(userFilters.default_city?.[0] ?? null);
+    if (lockedStore) setSelectedStore(userFilters.allowed_markets?.[0] ?? null);
+    if (lockedTL) setSelectedTL(userFilters.Team_leader?.[0] ?? null);
+  }
+}, [filtersLoading, userFilters, lockedRegion, lockedCity, lockedStore, lockedTL]);
 
   /* Initial data: users for that client */
   useEffect(() => {
