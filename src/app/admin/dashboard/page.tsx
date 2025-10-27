@@ -13,7 +13,6 @@ import { supabase } from "@/lib/supabaseClient";
 /* ---------------- Utilities ---------------- */
 const dirStyle = (isArabic: boolean): React.CSSProperties => ({
   direction: isArabic ? "rtl" : "ltr",
-  writingDirection: (isArabic ? "rtl" : "ltr") as React.CSSProperties["writingDirection"],
   textAlign: isArabic ? "right" : "left",
 });
 
