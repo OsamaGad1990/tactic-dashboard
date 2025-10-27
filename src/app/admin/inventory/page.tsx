@@ -928,48 +928,52 @@ useEffect(() => {
             }
           >
             <SelectObject
-              options={[
-                ...(lockedTL ? [] : [{ value: "ALL", label: ar ? "كل الفريق" : "All Team" }]),
-                ...tlOptions,
-              ]}
-              value={selectedTL || "ALL"}
-              onChange={(v) => setSelectedTL((v as UUID) || "ALL")}
-              placeholder={ar ? "اختر قائد فريق" : "Select TL"}
-              disabled={lockedTL}
-            />
+               options={cityOptions}
+  value={selectedCity ?? ""}            // ← هنا
+  placeholder={ar ? "كل المدن" : "All cities"}
+  onChange={(v) => { 
+    setSelectedCity(v || null); 
+    setSelectedStore(null); 
+  }}
+  disabled={lockedCity}
+/>
           </Capsule>
 
           <Capsule label={ar ? "المنطقة" : "Region"} summary={selectedRegion || (ar ? "الكل" : "All")}>
             <SelectSingle
-              options={regionOptions}
-              value={selectedRegion}
-              placeholder={ar ? "كل المناطق" : "All regions"}
-              onChange={(v) => { setSelectedRegion(v); setSelectedCity(""); setSelectedStore(""); }}
-              disabled={lockedRegion}
-              includeEmpty={!lockedRegion}
-            />
+  options={regionOptions}
+  value={selectedRegion ?? ""}          // ← هنا
+  placeholder={ar ? "كل المناطق" : "All regions"}
+  onChange={(v) => { 
+    setSelectedRegion(v || null);       // ← حوّل فاضي لـ null
+    setSelectedCity(null);              // ← بدّل "" إلى null
+    setSelectedStore(null);             // ← بدّل "" إلى null
+  }}
+  disabled={lockedRegion}
+/>
           </Capsule>
 
           <Capsule label={ar ? "المدينة" : "City"} summary={selectedCity || (ar ? "الكل" : "All")}>
             <SelectSingle
-              options={citiesOptions}
-              value={selectedCity}
-              placeholder={ar ? "كل المدن" : "All cities"}
-              onChange={(v) => { setSelectedCity(v); setSelectedStore(""); }}
-              disabled={lockedCity}
-              includeEmpty={!lockedCity}
-            />
+  options={cityOptions}
+  value={selectedCity ?? ""}            // ← هنا
+  placeholder={ar ? "كل المدن" : "All cities"}
+  onChange={(v) => { 
+    setSelectedCity(v || null); 
+    setSelectedStore(null); 
+  }}
+  disabled={lockedCity}
+/>
           </Capsule>
 
           <Capsule label={ar ? "السوق" : "Store"} summary={selectedStore || (ar ? "الكل" : "All")}>
             <SelectSingle
-              options={storeOptions}
-              value={selectedStore}
-              placeholder={ar ? "كل الأسواق" : "All stores"}
-              onChange={(v) => setSelectedStore(v)}
-              disabled={lockedStore}
-              includeEmpty={!lockedStore}
-            />
+  options={storeOptions}
+  value={selectedStore ?? ""}           // ← هنا
+  placeholder={ar ? "كل الأسواق" : "All markets"}
+  onChange={(v) => setSelectedStore(v || null)}
+  disabled={lockedStore}
+/>
           </Capsule>
         </div>
 
