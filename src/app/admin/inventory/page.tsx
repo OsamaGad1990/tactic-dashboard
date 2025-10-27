@@ -405,10 +405,10 @@ export default function InventoryReportPage() {
   const [dateTo, setDateTo] = useState<Date | null>(null);
 
   // فلاتر
-  const [selectedTL, setSelectedTL] = useState<UUID | "ALL">("ALL");
-  const [selectedRegion, setSelectedRegion] = useState("");
-  const [selectedCity, setSelectedCity] = useState("");
-  const [selectedStore, setSelectedStore] = useState("");
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
+const [selectedCity, setSelectedCity] = useState<string | null>(null);
+const [selectedStore, setSelectedStore] = useState<string | null>(null);
+const [selectedTL, setSelectedTL] = useState<string | null>(null);
 
   const [selectedUsers, setSelectedUsers] = useState<UUID[]>([]);
   const [selectedMarketStore, setSelectedMarketStore] = useState<string | null>(null);
