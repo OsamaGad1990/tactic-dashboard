@@ -98,6 +98,42 @@ function isObjRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/* ===== اختيار عمود التاريخ لكل خطوة ===== */
+const dateColumnFor = (stepKey: StepKey) => {
+  switch (stepKey) {
+    case "arrival_photos":       return "arrival_time";
+    case "remarks":              return "submit_at";   // هيبقى له OR مع created_at لو submit_at NULL
+    // باقي الخطوات:
+    case "availability":
+    case "whcount":
+    case "damage_reports":
+    case "sos_reports":
+    case "competitor_activity":
+    case "promoter_reports":
+    case "promoter_plus_reports":
+    case "tl_details":
+    default:
+      return "created_at";
+  }
+};
+
+/* ===== تحويل يوم إلى نطاق توقيت الرياض [بداية اليوم .. بداية اليوم التالي) ===== */
+const toKsaDayRange = (day: string) => {
+  // day = "YYYY-MM-DD" أو ISO فيه T
+  const ymd = day.split("T")[0];
+  const base = `${ymd}T00:00:00+03:00`;
+
+  const d = new Date(`${ymd}T00:00:00+03:00`);
+  d.setDate(d.getDate() + 1);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const next = `${yyyy}-${mm}-${dd}T00:00:00+03:00`;
+
+  return { fromISO: base, toISO: next };
+};
+
+
 /* ===== component ===== */
 export default function StepDataTable({
   step,
@@ -159,15 +195,26 @@ export default function StepDataTable({
 
       let q = supabase.from(cfg.table).select(cfg.select, { count: "exact" }).range(from, to);
 
+      // ⬅️ لازم دايمًا نطبّق visit_id لو متاح
       if (visitId) {
         q = q.eq("visit_id", visitId);
       }
 
-      if (startDate) {
-        q = q.gte("created_at", `${startDate}T00:00:00`);
-      }
-      if (endDate) {
-        q = q.lte("created_at", `${endDate}T23:59:59`);
+      // ⬅️ وبنطبّق التاريخ كمان (على عمود الخطوة الصحيح)
+      const dateCol = dateColumnFor(step);
+      const day = startDate || endDate; // UI بيبعت نفس اليوم في الاتنين
+      if (day) {
+        const { fromISO, toISO } = toKsaDayRange(day);
+
+        if (step === "remarks" && dateCol === "submit_at") {
+          // (submit_at within range) OR (submit_at is NULL AND created_at within range)
+          // والباقي (visit_id وغيره) AND مع الشرط ده
+          q = q.or(
+            `and(${dateCol}.gte.${fromISO},${dateCol}.lt.${toISO}),and(${dateCol}.is.null,created_at.gte.${fromISO},created_at.lt.${toISO})`
+          );
+        } else {
+          q = q.gte(dateCol, fromISO).lt(dateCol, toISO);
+        }
       }
 
       if (cfg.defaultOrder) {
@@ -194,9 +241,7 @@ export default function StepDataTable({
         const hasInlineJP = new RegExp(`(^|,)\\s*(${JP_FIELDS.join("|")})\\s*(,|$)`, "i").test(cfg.select);
 
         if (!hasInlineJP) {
-          const visitIds = Array.from(
-            new Set(arr.map((r) => getVisitId(r)).filter(Boolean))
-          );
+          const visitIds = Array.from(new Set(arr.map((r) => getVisitId(r)).filter(Boolean)));
 
           if (visitIds.length) {
             const { data: vData, error: vErr } = await supabase
@@ -211,9 +256,7 @@ export default function StepDataTable({
                 const rec = v as Record<string, unknown>;
                 const key = getStr(rec, "original_visit_id") || getStr(rec, "tl_visit_id");
                 const val = getStr(rec, "jp_state");
-                if (key && val) {
-                  map[key] = val.trim();
-                }
+                if (key && val) map[key] = val.trim();
               }
               setVisitStatusMap(map);
             } else if (vErr) {
@@ -252,14 +295,10 @@ export default function StepDataTable({
               if (!isObjRecord(recUnknown)) continue;
               const rec = recUnknown as Record<string, unknown>;
               const id = getId(rec);
-              
-              // 👇 --- بداية التصحيح ---
-              // كان الكود يبحث عن "arabic_name" بشكل ثابت
-              // الآن يقرأ اسم الحقل العربي من الإعدادات
+
               const labelPrimary = getStr(rec, lu.labelField);
               const labelArabic = lu.labelFieldAr ? getStr(rec, lu.labelFieldAr) : "";
               map[id] = (isArabic && labelArabic) ? labelArabic : labelPrimary || id;
-              // 👆 --- نهاية التصحيح ---
             }
             next[colKey] = map;
           } else if (lres.error) {
@@ -284,7 +323,7 @@ export default function StepDataTable({
     } finally {
       setLoading(false);
     }
-  }, [cfg, page, pageSize, visitId, isArabic, startDate, endDate]);
+  }, [cfg, page, pageSize, visitId, isArabic, startDate, endDate, step]);
 
   useEffect(() => {
     setPage(0);
@@ -508,24 +547,15 @@ function CellRenderer({
         </button>
       );
     }
-    // الكود الجديد الصحيح في StepDataTable.tsx
-case "pill": {
-  const raw = String(value).replace(/\s+/g, " ").trim().toUpperCase();
-
-  // 1. نحدد فقط "النكهة" (اللون) المطلوبة
-  const variant = raw.includes("OUT")
-    ? "danger"  // أحمر
-    : raw.includes("IN")
-    ? "success" // أخضر
-    : "neutral";  // افتراضي
-
-  // 2. نستدعي الشيف ونعطيه النكهة والنص فقط
-  return (
-    <BadgePill variant={variant}>
-      {raw || "—"}
-    </BadgePill>
-  );
-}
+    case "pill": {
+      const raw = String(value).replace(/\s+/g, " ").trim().toUpperCase();
+      const variant = raw.includes("OUT")
+        ? "danger"
+        : raw.includes("IN")
+        ? "success"
+        : "neutral";
+      return <BadgePill variant={variant}>{raw || "—"}</BadgePill>;
+    }
     default: {
       const text = String(value ?? "").trim();
       return <span className="whitespace-pre-wrap break-words">{text || "—"}</span>;

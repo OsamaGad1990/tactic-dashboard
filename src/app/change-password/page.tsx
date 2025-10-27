@@ -10,7 +10,7 @@ import PopupDialog from "@/components/ui/PopupDialog";
 
 type Stage = "idle" | "checking" | "updating" | "confirmLogout" | "error";
 const MIN_LEN = 6;
-
+export const dynamic = "force-dynamic";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseAnon);

@@ -17,13 +17,11 @@ const nextConfig = {
         hostname: SUPABASE_HOST,
         pathname: "/storage/v1/object/**",
       },
-      // لو عندك أكثر من باكت أو مسارات مختلفة داخل نفس المشروع مفيش مشكلة — الباترن أعلاه يشملها
-      // لو هتسحب صور من دومينات أخرى (CDN أو جهات خارجية) ضيفها هنا بنفس الشكل.
+      // يمكن إضافة دومينات أخرى هنا عند الحاجة
     ],
-    domains: [SUPABASE_HOST],
   },
 
-  // خليها false لو عايز تتجاوز أخطاء ESLint وقت البيلد
+  // لو عايز تتجاهل أخطاء ESLint وقت الـ build
   eslint: {
     ignoreDuringBuilds: false,
   },

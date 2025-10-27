@@ -1,0 +1,2 @@
+﻿name = "send-daily-report"
+verify_jwt = false

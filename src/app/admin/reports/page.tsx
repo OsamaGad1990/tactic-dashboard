@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { useLangTheme } from "@/hooks/useLangTheme";
 import StepsToolbar from "@/app/admin/visit-steps/StepsToolbar";
 import StepDataTable from "@/app/admin/visit-steps/StepDataTable";
 import { VISIT_STEPS, StepKey } from "@/utils/visitStepsMap";
 import SupaImg from "@/components/SupaImg";
+import { useAdminCascadingFilters } from "@/hooks/useAdminCascadingFilters";
 
 /* ========= Supabase ========= */
 const supabase = createClient(
@@ -18,6 +18,22 @@ const supabase = createClient(
 
 /* ========= Types ========= */
 type UUID = string;
+
+type AllVisitsCombinedRow = {
+  id: UUID | null;                 // aliased: visit_id
+  original_visit_id: UUID | null;  // aliased: visit_id
+  tl_visit_id: UUID | null;
+  user_id: UUID;
+  market_id: UUID;
+  client_id: UUID | null;
+  snapshot_date: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  end_reason_en: string | null;
+  end_reason_ar: string | null;
+  end_visit_photo: string | null;
+};
 
 type UserRow = {
   id: UUID;
@@ -49,22 +65,20 @@ type SnapshotRow = {
   status: string;
   started_at: string | null;
   finished_at: string | null;
- end_reason_en: string | null;
+  end_reason_en: string | null;
   end_reason_ar: string | null;
   end_visit_photo: string | null;
 };
 
-/* ========= Helpers ========= */
-const LS_KEYS = { clientId: "client_id" } as const;
-const getClientId = () => {
-  if (typeof window === "undefined") return null;
-  try {
-    return localStorage.getItem(LS_KEYS.clientId) || sessionStorage.getItem(LS_KEYS.clientId);
-  } catch {
-    return null;
-  }
+type UserIdRow = { id: UUID };
+type UserSettingsRow = {
+  default_region: string[] | null;
+  default_city: string[] | null;
+  allowed_markets: string[] | null;
+  Team_leader: UUID[] | null;
 };
 
+/* ========= Helpers ========= */
 const isAdminRole = (role?: string | null) => {
   const r = (role || "").toLowerCase().trim();
   return r === "admin" || r === "super_admin" || r === "super admin";
@@ -104,7 +118,15 @@ function PillCount({ n }: { n: number }) {
     </span>
   );
 }
-function Panel({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
+function Panel({
+  title,
+  right,
+  children,
+}: {
+  title: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div style={{ border: cardBorder, background: "var(--card)", borderRadius: 16, padding: 12 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -134,7 +156,15 @@ function EmptyBox({ text }: { text: string }) {
 }
 
 /* ============ Filters / Capsules ============ */
-function Capsule({ label, summary, children }: { label: string; summary?: string; children: React.ReactNode }) {
+function Capsule({
+  label,
+  summary,
+  children,
+}: {
+  label: string;
+  summary?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div
       style={{
@@ -145,6 +175,7 @@ function Capsule({ label, summary, children }: { label: string; summary?: string
         borderRadius: 14,
         background: "var(--input-bg)",
         padding: "8px 10px",
+        overflow: "hidden",
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -156,89 +187,161 @@ function Capsule({ label, summary, children }: { label: string; summary?: string
   );
 }
 
-function MultiDropdown({
+type Option = { value: string; label: string };
+
+/* === Object select (TL) === */
+function SelectObject({
   options,
-  values,
+  value,
   onChange,
   placeholder,
+  disabled,
 }: {
-  options: string[];
-  values: string[];
-  onChange: (v: string[]) => void;
+  options: Option[];
+  value: string;
+  onChange: (v: string) => void;
   placeholder?: string;
+  disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const toggle = () => setOpen((s) => !s);
-  const { isArabic: ar } = useLangTheme();
-
-  const selectedText =
-    values.length === 0
-      ? placeholder || (ar ? "الكل" : "All")
-      : values.slice(0, 2).join(", ") + (values.length > 2 ? " +" + (values.length - 2) : "");
+  const { isArabic } = useLangTheme();
 
   return (
-    <div style={{ position: "relative" }}>
-      <button
-        type="button"
-        onClick={toggle}
+    <div
+      style={{
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        padding: "10px 12px",
+        borderRadius: 12,
+        border: "1px solid var(--input-border)",
+        background: "var(--card)",
+        overflow: "hidden",
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <select
+        value={value ?? ""}
+        onChange={(e) => onChange(e.currentTarget.value)}
+        disabled={disabled}
         style={{
           width: "100%",
-          textAlign: "start",
-          padding: "10px 12px",
-          borderRadius: 12,
-          border: "1px solid var(--input-border)",
-          background: "var(--card)",
+          height: 24,
+          padding: isArabic ? "0 34px 0 6px" : "0 6px 0 34px",
+          border: "none",
+          outline: "none",
+          background: "transparent",
           color: "var(--text)",
-          cursor: "pointer",
-          fontSize: 13,
+          appearance: "none",
+          WebkitAppearance: "none",
+          MozAppearance: "none",
+          fontWeight: 700,
         }}
       >
-        {selectedText}
-      </button>
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            insetInlineStart: 0,
-            marginTop: 6,
-            zIndex: 50,
-            minWidth: "100%",
-            maxHeight: 240,
-            overflow: "auto",
-            borderRadius: 12,
-            border: cardBorder,
-            background: "var(--card)",
-            padding: 8,
-            boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
-          }}
-        >
-          {options.length === 0 ? (
-            <div style={{ padding: 8, opacity: 0.7, fontSize: 12 }}>{ar ? "لا يوجد" : "No options"}</div>
-          ) : (
-            options.map((op) => {
-              const checked = values.includes(op);
-              return (
-                <label key={op} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => (checked ? onChange(values.filter((v) => v !== op)) : onChange([...values, op]))}
-                  />
-                  <span>{op}</span>
-                </label>
-              );
-            })
-          )}
-          <div style={{ display: "flex", gap: 8, padding: 8 }}>
-            <button type="button" onClick={() => onChange([])} style={{ ...btnSm(false), padding: "6px 12px" }}>
-              {ar ? "مسح" : "Clear"}
-            </button>
-            <button type="button" onClick={() => setOpen(false)} style={{ ...btnSm(true), padding: "6px 12px" }}>
-              {ar ? "تم" : "Done"}
-            </button>
-          </div>
-        </div>
-      )}
+        <option value="">{placeholder || ""}</option>
+        {options.map((op) => (
+          <option key={op.value} value={op.value}>
+            {op.label}
+          </option>
+        ))}
+      </select>
+      <span
+        aria-hidden
+        style={{
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          [isArabic ? "left" : "right"]: 10,
+          display: "flex",
+          alignItems: "center",
+          pointerEvents: "none",
+          opacity: 0.8,
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+    </div>
+  );
+}
+
+/* === Single select (Region/City/Market) — أضفت disabled === */
+function SelectSingle({
+  options,
+  value,
+  onChange,
+  placeholder,
+  disabled,
+}: {
+  options: string[];
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const { isArabic } = useLangTheme();
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        padding: "10px 12px",
+        borderRadius: 12,
+        border: "1px solid var(--input-border)",
+        background: "var(--card)",
+        overflow: "hidden",
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <select
+        value={value ?? ""}
+        onChange={(e) => onChange(e.currentTarget.value)}
+        disabled={disabled}
+        style={{
+          width: "100%",
+          height: 24,
+          padding: isArabic ? "0 34px 0 6px" : "0 6px 0 34px",
+          border: "none",
+          outline: "none",
+          background: "transparent",
+          color: "var(--text)",
+          appearance: "none",
+          WebkitAppearance: "none",
+          MozAppearance: "none",
+          fontWeight: 700,
+        }}
+      >
+        <option value="">{placeholder || ""}</option>
+        {options.map((op) => (
+          <option key={op} value={op}>
+            {op}
+          </option>
+        ))}
+      </select>
+
+      <span
+        aria-hidden
+        style={{
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          [isArabic ? "left" : "right"]: 10,
+          display: "flex",
+          alignItems: "center",
+          pointerEvents: "none",
+          opacity: 0.8,
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
     </div>
   );
 }
@@ -281,7 +384,7 @@ function DateField({
       <div
         role="button"
         onClick={openPicker}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && openPicker()}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " " ? openPicker() : null)}
         tabIndex={0}
         style={{
           display: "flex",
@@ -309,7 +412,7 @@ function DateField({
       <input
         ref={inputRef}
         type="date"
-        value={value}
+        value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
         style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 0, height: 0 }}
       />
@@ -320,27 +423,106 @@ function DateField({
 /* ========= Page ========= */
 export default function Page() {
   const { isArabic: ar } = useLangTheme();
-  const search = useSearchParams();
-
   const [loading, setLoading] = useState(false);
 
-  // Filters
+  /* ===== user_settings masks ===== */
+  const [userSettings, setUserSettings] = useState<
+    Pick<UserSettingsRow, "default_region" | "default_city" | "allowed_markets" | "Team_leader"> | null
+  >(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data: authRes } = await supabase.auth.getUser();
+      const authId = authRes?.user?.id || null;
+      if (!authId) return;
+
+      const { data: u } = await supabase
+        .from<UserIdRow>("Users")
+        .select("id")
+        .eq("auth_user_id", authId)
+        .maybeSingle();
+
+      if (!u) return;
+
+      const { data: st } = await supabase
+        .from<UserSettingsRow>("user_settings")
+        .select("default_region, default_city, allowed_markets, Team_leader")
+        .eq("user_id", u.id)
+        .maybeSingle();
+
+      if (st) {
+        setUserSettings({
+          default_region: st.default_region,
+          default_city: st.default_city,
+          allowed_markets: st.allowed_markets,
+          Team_leader: st.Team_leader,
+        });
+        // ثبّت القيم المقفولة مباشرة
+        setFilters((prev) => ({
+          ...prev,
+          region: st.default_region?.[0] ?? prev.region,
+          city: st.default_city?.[0] ?? prev.city,
+          market: st.allowed_markets?.[0] ?? prev.market,
+        }));
+      }
+    })();
+  }, []);
+
+  const permRegions = useMemo<Set<string> | null>(() => {
+    const arr = userSettings?.default_region?.filter(Boolean) ?? [];
+    return arr.length ? new Set(arr) : null;
+  }, [userSettings?.default_region]);
+
+  const permCities = useMemo<Set<string> | null>(() => {
+    const arr = userSettings?.default_city?.filter(Boolean) ?? [];
+    return arr.length ? new Set(arr) : null;
+  }, [userSettings?.default_city]);
+
+  const permStores = useMemo<Set<string> | null>(() => {
+    const arr = userSettings?.allowed_markets?.map((s) => (s || "").trim()).filter(Boolean) ?? [];
+    return arr.length ? new Set(arr) : null;
+  }, [userSettings?.allowed_markets]);
+
+  const lockedRegion = !!permRegions?.size;
+  const lockedCity = !!permCities?.size;
+  const lockedStore = !!permStores?.size;
+
+  // فلاتر (Single-select) مثل الداشبورد
   const [filters, setFilters] = useState({
-    clientId: "",
-    from: "",
-    to: "",
-    regions: [] as string[],
-    cities: [] as string[],
-    marketsNames: [] as string[],
-    teamLeaderId: null as UUID | "ALL" | null,
+    region: "" as string,
+    city: "" as string,
+    market: "" as string, // store/chain
   });
 
-  // TLs/users/markets
-  const [tls, setTls] = useState<UserRow[]>([]);
+  // الهُوك الموحد (from/to/TL)
+  const {
+    clientId,
+    tls,
+    tlDisabled,
+    filters: gFilters,     // { from, to, team_leader_id }
+    updateFilter,          // setter لتحديث from/to/team_leader_id
+  } = useAdminCascadingFilters();
+
+  // أقفال TL من user_settings
+  const permTLs = useMemo<Set<UUID> | null>(() => {
+    const arr = userSettings?.Team_leader?.filter(Boolean) ?? [];
+    return arr.length ? new Set(arr) : null;
+  }, [userSettings?.Team_leader]);
+  const lockedTL = !!permTLs?.size;
+
+  // طبّق قفل TL على قيمة الفلتر
+  useEffect(() => {
+    if (lockedTL && userSettings?.Team_leader?.[0]) {
+      updateFilter("team_leader_id", userSettings.Team_leader[0]); // إجبار القيمة
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedTL, userSettings?.Team_leader?.[0]]);
+
+  // users/markets
   const [users, setUsers] = useState<UserRow[]>([]);
   const [markets, setMarkets] = useState<MarketRow[]>([]);
 
-  // options
+  // options (تُعاد حسابها ديناميكيًا حسب الفلاتر + الماسكات)
   const [regionsOpts, setRegionsOpts] = useState<string[]>([]);
   const [citiesOpts, setCitiesOpts] = useState<string[]>([]);
   const [marketsOpts, setMarketsOpts] = useState<string[]>([]);
@@ -351,23 +533,298 @@ export default function Page() {
   const [selectedBranches, setSelectedBranches] = useState<UUID[]>([]);
   const [snapshots, setSnapshots] = useState<SnapshotRow[]>([]);
   const [selectedSnapshotIds, setSelectedSnapshotIds] = useState<UUID[]>([]);
+  const [incompleteCount, setIncompleteCount] = useState(0);
 
   const FIRST_STEP: StepKey = useMemo(() => Object.keys(VISIT_STEPS)[0] as StepKey, []);
   const [currentStep, setCurrentStep] = useState<StepKey>(FIRST_STEP);
+  const [availableSteps, setAvailableSteps] = useState<StepKey[]>([]);
   const [endReasonViewer, setEndReasonViewer] = useState({ open: false, reasonEn: "", reasonAr: "", photo: "" });
 
+  /* ====== Users (multi-select) ====== */
+  useEffect(() => {
+    setMarkets([]);
+    setSelectedChains([]);
+    setSelectedBranches([]);
+    setSnapshots([]);
+    setSelectedSnapshotIds([]);
+
+    if (!clientId || !gFilters.team_leader_id) return;
+
+    (async () => {
+      setLoading(true);
+      const { data } = await supabase
+        .from("client_users")
+        .select("user_id, Users!inner(id, name, username, arabic_name, role, team_leader_id)")
+        .eq("client_id", clientId)
+        .eq("is_active", true);
+
+      const rows = (data ?? []) as unknown as Array<{ user_id: UUID; Users: UserRow }>;
+      let list = rows.map((r) => r.Users).filter((u) => !isAdminRole(u.role) && !isTLRole(u.role));
+
+      if (gFilters.team_leader_id !== "ALL") {
+        list = list.filter((u) => u.team_leader_id === gFilters.team_leader_id);
+      }
+
+      list.sort((a, b) => (a.username || "").localeCompare(b.username || "", "ar"));
+      setUsers(list);
+
+      setSelectedUsers((prev) => {
+        const allowed = new Set(list.map((u) => u.id));
+        return prev.filter((id) => allowed.has(id));
+      });
+      setLoading(false);
+    })();
+  }, [clientId, gFilters.team_leader_id]);
+
+  /* ====== Markets for selectedUsers ====== */
+  type MarketsSelect = {
+    id: string;
+    region: string | null;
+    city: string | null;
+    store: string | null;
+    branch: string | null;
+  };
+
+  useEffect(() => {
+    setMarkets([]);
+    setSelectedChains([]);
+    setSelectedBranches([]);
+    setSnapshots([]);
+    setSelectedSnapshotIds([]);
+
+    if (selectedUsers.length === 0 || !clientId) return;
+
+    const isUUID = (x: unknown): x is string => typeof x === "string" && x.length > 0;
+
+    (async () => {
+      setLoading(true);
+      const vmRes = await supabase
+        .from("Visits")
+        .select("market_id, user_id")
+        .eq("client_id", clientId)
+        .in("user_id", selectedUsers)
+        .not("market_id", "is", null);
+
+      let marketIds = Array.from(new Set((vmRes.data ?? []).map((r) => r.market_id as unknown).filter(isUUID)));
+
+      const snapMarketsRes = await supabase
+        .from("DailyVisitSnapshots")
+        .select("market_id")
+        .eq("client_id", clientId)
+        .in("user_id", selectedUsers)
+        .not("market_id", "is", null);
+
+      if (!snapMarketsRes.error) {
+        const snapIds = (snapMarketsRes.data ?? []).map((r) => r.market_id as unknown).filter(isUUID);
+        marketIds = Array.from(new Set([...marketIds, ...snapIds]));
+      }
+
+      if (marketIds.length === 0) {
+        const cmRes = await supabase.from("client_markets").select("market_id").eq("client_id", clientId);
+        marketIds = Array.from(new Set((cmRes.data ?? []).map((r) => r.market_id as unknown).filter(isUUID)));
+      }
+
+      if (marketIds.length === 0) {
+        setLoading(false);
+        return;
+      }
+
+      const { data } = await supabase.from("Markets").select("id, region, city, store, branch").in("id", marketIds);
+      const rows = (data ?? []) as MarketsSelect[];
+
+      const ms: MarketRow[] = rows.map((r) => ({
+        id: String(r.id),
+        name: r.branch?.trim() || r.store?.trim() || "—",
+        region: r.region,
+        city: r.city,
+        store: r.store,
+        branches: r.branch,
+      }));
+
+      setMarkets(ms);
+      setLoading(false);
+    })();
+  }, [selectedUsers, clientId]);
+
+  /* ====== marketPasses + إعادة حساب الخيارات ====== */
+  const marketPasses = useMemo(
+    () => (m: MarketRow, omitKey?: "region" | "city" | "market") => {
+      // ماسكات الصلاحيات
+      if (permRegions && m.region && !permRegions.has(m.region)) return false;
+      if (permCities && m.city && !permCities.has(m.city)) return false;
+      const storeName = (m.store || m.name || "").trim();
+      if (permStores && storeName && !permStores.has(storeName)) return false;
+
+      const match = (key: "region" | "city" | "market", value: string, getter: (mm: MarketRow) => string | null) => {
+        if (omitKey === key) return true;
+        if (!value) return true;
+        return (getter(m) || "") === value;
+      };
+
+      return (
+        match("region", filters.region, (mm) => mm.region ?? null) &&
+        match("city", filters.city, (mm) => mm.city ?? null) &&
+        match("market", filters.market, (mm) => (mm.store || mm.name || "").trim() || null)
+      );
+    },
+    [filters.region, filters.city, filters.market, permRegions, permCities, permStores]
+  );
+
+  // إعادة حساب القوائم المنسدلة + تنظيف الاختيارات غير الصالحة (مع احترام الأقفال)
+  useEffect(() => {
+    const nextRegions = new Set<string>();
+    const nextCities = new Set<string>();
+    const nextStores = new Set<string>();
+
+    for (const m of markets) {
+      if (marketPasses(m, "region") && m.region) nextRegions.add(m.region);
+      if (marketPasses(m, "city") && m.city) nextCities.add(m.city);
+      const nm = (m.store || m.name || "").trim();
+      if (marketPasses(m, "market") && nm) nextStores.add(nm);
+    }
+
+    // قيّد القوائم بالمسموح لو فيه قفل
+    const lockList = <T,>(src: T[], allowed: Set<T> | null) => (allowed ? src.filter((x) => allowed.has(x)) : src);
+
+    const rArr = lockList(Array.from(nextRegions).sort((a, b) => a.localeCompare(b, "ar")), permRegions);
+    const cArr = lockList(Array.from(nextCities).sort((a, b) => a.localeCompare(b, "ar")), permCities);
+    const sArr = lockList(Array.from(nextStores).sort((a, b) => a.localeCompare(b, "ar")), permStores);
+
+    setRegionsOpts(rArr);
+    setCitiesOpts(cArr);
+    setMarketsOpts(sArr);
+
+    setFilters((prev) => {
+      const next = { ...prev };
+      if (next.region && !rArr.includes(next.region)) next.region = lockedRegion ? userSettings?.default_region?.[0] ?? "" : "";
+      if (next.city && !cArr.includes(next.city)) next.city = lockedCity ? userSettings?.default_city?.[0] ?? "" : "";
+      if (next.market && !sArr.includes(next.market)) next.market = lockedStore ? userSettings?.allowed_markets?.[0] ?? "" : "";
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markets, marketPasses, lockedRegion, lockedCity, lockedStore]);
+
+  /* ====== فلترة الأسواق وفق الاختيارات ====== */
+  const filteredMarkets = useMemo(() => {
+    return markets.filter((m) => marketPasses(m));
+  }, [markets, marketPasses]);
+
+  const chains = useMemo(() => {
+    const S = new Set<string>();
+    filteredMarkets.forEach((m) => {
+      const name = (m.store || m.name || "").trim();
+      if (name) S.add(name);
+    });
+    return Array.from(S).sort((a, b) => a.localeCompare(b, "ar"));
+  }, [filteredMarkets]);
+
+  const branches = useMemo(() => {
+    const base = selectedChains.length
+      ? filteredMarkets.filter((m) => selectedChains.includes((m.store || m.name || "").trim()))
+      : filteredMarkets;
+
+    return base
+      .map((m) => ({
+        id: m.id,
+        label:
+          (m.branches && m.branches.trim()) ||
+          (m.name && m.name.trim()) ||
+          (m.store && m.store.trim()) ||
+          (m.city && m.city.trim()) ||
+          "—",
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, "ar"));
+  }, [filteredMarkets, selectedChains]);
+
+  // اربط فلاتر Region/City/Market بالاختيارات الفعلية تلقائيًا (وتوليد الفروع)
+  useEffect(() => {
+    const chain = filters.market?.trim() || "";
+    setSelectedChains(chain ? [chain] : []);
+
+    const base = chain
+      ? filteredMarkets.filter((m) => ( (m.store || m.name || "").trim() === chain))
+      : filteredMarkets;
+
+    const nextBranchIds = base.map((m) => m.id);
+    setSelectedBranches(nextBranchIds);
+
+    // تنظيف النتائج السابقة
+    setSnapshots([]);
+    setSelectedSnapshotIds([]);
+    setIncompleteCount(0);
+  }, [filters.region, filters.city, filters.market, filteredMarkets]);
+
+  /* ====== Snapshots via all_visits_combined ====== */
+  useEffect(() => {
+    setSnapshots([]);
+    setSelectedSnapshotIds([]);
+    setIncompleteCount(0);
+
+    if (!clientId || selectedUsers.length === 0 || selectedBranches.length === 0) return;
+
+    (async () => {
+      setLoading(true);
+
+      let query = supabase
+        .from("all_visits_combined")
+        .select(
+          `
+          id:visit_id,
+          original_visit_id:visit_id,
+          tl_visit_id,
+          user_id,
+          market_id,
+          client_id,
+          snapshot_date,
+          status,
+          started_at,
+          finished_at,
+          end_reason_en,
+          end_reason_ar,
+          end_visit_photo
+        `
+        )
+        .eq("client_id", clientId)
+        .in("user_id", selectedUsers)
+        .in("market_id", selectedBranches)
+        .not("status", "is", null);
+
+      if (gFilters.from) query = query.gte("snapshot_date", gFilters.from);
+      if (gFilters.to) query = query.lte("snapshot_date", gFilters.to);
+
+      const { data, error } = await query
+        .returns<AllVisitsCombinedRow[]>()   // Typed
+        .order("started_at", { ascending: false });
+
+      if (error) {
+        console.error("Error fetching from all_visits_combined:", error);
+        setLoading(false);
+        return;
+      }
+
+      const collected: SnapshotRow[] = (data ?? []).map((item) => ({
+        ...item,
+        id: (item.id ?? item.tl_visit_id) as UUID,
+        original_visit_id: (item.original_visit_id ?? item.id) as UUID,
+      }));
+
+      const incomplete = collected.filter((s) => s.status !== "finished" && s.status !== "ended").length;
+      setIncompleteCount(incomplete);
+
+      setSnapshots(collected);
+      setLoading(false);
+    })();
+  }, [clientId, gFilters.from, gFilters.to, selectedUsers, selectedBranches]);
+
+  /* ====== visit steps availability ====== */
   const { activeVisitId, activeDate } = useMemo(() => {
-  if (selectedSnapshotIds.length === 0) return { activeVisitId: null, activeDate: null };
-  const sid = selectedSnapshotIds[0];
-  const s = snapshots.find((x) => x.id === sid);
-  if (!s) return { activeVisitId: null, activeDate: null };
+    if (selectedSnapshotIds.length === 0) return { activeVisitId: null, activeDate: null };
+    const sid = selectedSnapshotIds[0];
+    const s = snapshots.find((x) => x.id === sid);
+    if (!s) return { activeVisitId: null, activeDate: null };
+    return { activeVisitId: s.original_visit_id || s.tl_visit_id || null, activeDate: s.snapshot_date };
+  }, [selectedSnapshotIds, snapshots]);
 
-  const visitId = s.original_visit_id || s.tl_visit_id || null;
-  const date = s.snapshot_date; // <-- استخراج التاريخ من الزيارة المختارة
-  return { activeVisitId: visitId, activeDate: date };
-}, [selectedSnapshotIds, snapshots]);
-
-  const [availableSteps, setAvailableSteps] = useState<StepKey[]>([]);
   useEffect(() => {
     if (!activeVisitId) {
       setAvailableSteps([]);
@@ -389,7 +846,7 @@ export default function Page() {
       if (!alive) return;
       const keys = checks.filter(([, c]) => c > 0).map(([k]) => k as StepKey);
       setAvailableSteps(keys);
-      setCurrentStep((prev) => (keys.includes(prev) ? prev : (keys[0] ?? FIRST_STEP)));
+      setCurrentStep((prev) => (keys.includes(prev) ? prev : keys[0] ?? FIRST_STEP));
     })();
     return () => {
       alive = false;
@@ -400,299 +857,24 @@ export default function Page() {
     setCurrentStep(FIRST_STEP);
   }, [FIRST_STEP, selectedSnapshotIds]);
 
-  /* ====== init: clientId + query ====== */
-  useEffect(() => {
-    const cid = getClientId();
-    setFilters((s) => ({ ...s, clientId: cid || s.clientId }));
-
-    if (!search) return;
-    const from = search.get("from");
-    const to = search.get("to");
-    const tl = search.get("tl") as UUID | "ALL" | null;
-    setFilters((s) => ({ ...s, from: from || s.from, to: to || s.to, teamLeaderId: tl ?? s.teamLeaderId }));
-  }, [search]);
-
-  /* ====== TLs for client ====== */
-  useEffect(() => {
-    if (!filters.clientId) return;
-    (async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from("client_users")
-        .select("user_id, Users!inner(id, name, username, arabic_name, role, team_leader_id)")
-        .eq("client_id", filters.clientId)
-        .eq("is_active", true);
-
-      const rows = (data ?? []) as unknown as Array<{ user_id: UUID; Users: UserRow }>;
-      const list = rows.map((r) => r.Users).filter((u) => isTLRole(u.role) && !isAdminRole(u.role));
-      setTls(list);
-      setLoading(false);
-    })();
-  }, [filters.clientId]);
-
-  /* ====== Users (multi-select) ====== */
-  useEffect(() => {
-    setMarkets([]);
-    setSelectedChains([]);
-    setSelectedBranches([]);
-    setSnapshots([]);
-    setSelectedSnapshotIds([]);
-
-    if (!filters.clientId || !filters.teamLeaderId) return;
-
-    (async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from("client_users")
-        .select("user_id, Users!inner(id, name, username, arabic_name, role, team_leader_id)")
-        .eq("client_id", filters.clientId)
-        .eq("is_active", true);
-
-      const rows = (data ?? []) as unknown as Array<{ user_id: UUID; Users: UserRow }>;
-      let list = rows.map((r) => r.Users).filter((u) => !isAdminRole(u.role) && !isTLRole(u.role));
-
-      if (filters.teamLeaderId !== "ALL") {
-        list = list.filter((u) => u.team_leader_id === filters.teamLeaderId);
-      } else if (tls.length) {
-        const byId = new Map<string, UserRow>();
-        [...tls, ...list].forEach((u) => byId.set(u.id, u));
-        list = Array.from(byId.values());
-      }
-
-      list.sort((a, b) => (a.username || "").localeCompare(b.username || "", "ar"));
-      setUsers(list);
-
-      setSelectedUsers((prev) => {
-        const allowed = new Set(list.map((u) => u.id));
-        return prev.filter((id) => allowed.has(id));
-      });
-      setLoading(false);
-    })();
-  }, [filters.clientId, filters.teamLeaderId, tls]);
-
-  /* ====== Markets for selectedUsers ====== */
-  type MarketsSelect = {
-    id: string;
-    region: string | null;
-    city: string | null;
-    store: string | null;
-    branch: string | null;
-    latitude?: number | null;
-    longitude?: number | null;
-  };
-
-  useEffect(() => {
-    setMarkets([]);
-    setSelectedChains([]);
-    setSelectedBranches([]);
-    setSnapshots([]);
-    setSelectedSnapshotIds([]);
-
-    if (selectedUsers.length === 0 || !filters.clientId) return;
-
-    const isUUID = (x: unknown): x is string => typeof x === "string" && x.length > 0;
-
-    (async () => {
-      setLoading(true);
-      const vmRes = await supabase
-        .from("Visits")
-        .select("market_id, user_id")
-        .eq("client_id", filters.clientId)
-        .in("user_id", selectedUsers)
-        .not("market_id", "is", null);
-
-      let marketIds = Array.from(new Set((vmRes.data ?? []).map((r) => r.market_id as unknown).filter(isUUID)));
-
-      const snapMarketsRes = await supabase
-        .from("DailyVisitSnapshots")
-        .select("market_id")
-        .eq("client_id", filters.clientId)
-        .in("user_id", selectedUsers)
-        .not("market_id", "is", null);
-
-      if (!snapMarketsRes.error) {
-        const snapIds = (snapMarketsRes.data ?? []).map((r) => r.market_id as unknown).filter(isUUID);
-        marketIds = Array.from(new Set([...marketIds, ...snapIds]));
-      }
-
-      if (marketIds.length === 0) {
-        const cmRes = await supabase.from("client_markets").select("market_id").eq("client_id", filters.clientId);
-        marketIds = Array.from(new Set((cmRes.data ?? []).map((r) => r.market_id as unknown).filter(isUUID)));
-      }
-
-      if (marketIds.length === 0) {
-        setLoading(false);
-        return;
-      }
-
-      const { data } = await supabase
-        .from("Markets")
-        .select("id, region, city, store, branch")
-        .in("id", marketIds)
-        .throwOnError();
-
-      const rows = (data ?? []) as MarketsSelect[];
-
-      const ms: MarketRow[] = rows.map((r) => ({
-        id: String(r.id),
-        name: r.branch?.trim() || r.store?.trim() || "—",
-        region: r.region,
-        city: r.city,
-        store: r.store,
-        branches: r.branch,
-      }));
-
-      setMarkets(ms);
-
-      const regions = Array.from(new Set(ms.map((m) => m.region).filter((x): x is string => !!x))).sort((a, b) =>
-        a.localeCompare(b, "ar")
-      );
-      const cities = Array.from(new Set(ms.map((m) => m.city).filter((x): x is string => !!x))).sort((a, b) =>
-        a.localeCompare(b, "ar")
-      );
-      const stores = Array.from(new Set(ms.map((m) => (m.store || m.name)).filter((x): x is string => !!x))).sort((a, b) =>
-        a.localeCompare(b, "ar")
-      );
-
-      setRegionsOpts(regions);
-      setCitiesOpts(cities);
-      setMarketsOpts(stores);
-      setLoading(false);
-    })();
-  }, [selectedUsers, filters.clientId]);
-
-  // فلترة الأسواق
-  const filteredMarkets = useMemo(() => {
-    return markets.filter((m) => {
-      const byRegion = filters.regions.length === 0 || (m.region && filters.regions.includes(m.region));
-      const byCity = filters.cities.length === 0 || (m.city && filters.cities.includes(m.city));
-      const byMarketName =
-        filters.marketsNames.length === 0 ||
-        ((m.store && filters.marketsNames.includes(m.store)) || (m.name && filters.marketsNames.includes(m.name)));
-      return byRegion && byCity && byMarketName;
-    });
-  }, [markets, filters.regions, filters.cities, filters.marketsNames]);
-
-  const chains = useMemo(() => {
-    const S = new Set<string>();
-    filteredMarkets.forEach((m) => {
-      const name = (m.store || "").trim();
-      if (name) S.add(name);
-    });
-    return Array.from(S).sort((a, b) => a.localeCompare(b, "ar"));
-  }, [filteredMarkets]);
-
-  const branches = useMemo(() => {
-    const base = selectedChains.length
-      ? filteredMarkets.filter((m) => selectedChains.includes((m.store || "").trim()))
-      : filteredMarkets;
-
-    return base
-      .map((m) => ({
-        id: m.id,
-        label:
-          (m.branches && m.branches.trim()) ||
-          (m.name && m.name.trim()) ||
-          (m.store && m.store.trim()) ||
-          (m.city && m.city.trim()) ||
-          "—",
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label, "ar"));
-  }, [filteredMarkets, selectedChains]);
-
-/* ====== Snapshots via all_visits_combined ====== */
-const [incompleteCount, setIncompleteCount] = useState(0);
-
-// =================== الكود الجديد ===================
-useEffect(() => {
-  setSnapshots([]);
-  setSelectedSnapshotIds([]);
-  setIncompleteCount(0);
-
-  if (!filters.clientId || selectedUsers.length === 0 || selectedBranches.length === 0) {
-    return;
-  }
-
-  (async () => {
-    setLoading(true);
-
-    let query = supabase
-      .from("all_visits_combined") // 👈 الآن نقرأ من الـ VIEW مباشرة
-      .select(`
-        id:visit_id,
-        original_visit_id:visit_id,
-        tl_visit_id,
-        user_id,
-        market_id,
-        client_id,
-        snapshot_date,
-        status,
-        started_at,
-        finished_at,
-        end_reason_en,
-        end_reason_ar,
-        end_visit_photo
-      `)
-      .eq("client_id", filters.clientId)
-      .in("user_id", selectedUsers)
-      .in("market_id", selectedBranches)
-      .not("status", "is", null); // تجاهل الزيارات بدون حالة
-
-    if (filters.from) {
-      query = query.gte("snapshot_date", filters.from);
-    }
-    if (filters.to) {
-      query = query.lte("snapshot_date", filters.to);
-    }
-
-    const { data, error } = await query.order("started_at", { ascending: false });
-
-    if (error) {
-      console.error("Error fetching from all_visits_combined:", error);
-      setLoading(false);
-      return;
-    }
-    
-    // 👇 نحول الأسماء لتطابق النوع SnapshotRow
-    // الـ VIEW لا يحتوي على عمود id، لذا نستخدم visit_id بدلاً عنه
-    const collected = (data || []).map(item => ({
-      ...item,
-      id: item.id || item.tl_visit_id, 
-      original_visit_id: item.original_visit_id || item.id,
-    })) as SnapshotRow[];
-
-
-    // حساب عدد الزيارات غير المكتملة
-    const incomplete = collected.filter(s => s.status !== 'finished' && s.status !== 'ended').length;
-    setIncompleteCount(incomplete);
-
-    setSnapshots(collected);
-    setLoading(false);
-  })();
-}, [filters.clientId, filters.from, filters.to, selectedUsers, selectedBranches]);
-// ================= نهاية الكود الجديد =================
-
+  /* ====== counts + visible list ====== */
   const { completedCount, pendingCount, visibleSnapshots } = useMemo(() => {
-    const completed = snapshots.filter(s => s.status === 'finished');
-    const ended = snapshots.filter(s => s.status === 'ended');
-    
-    // الزيارات التي ستظهر في القائمة هي المكتملة والمنهاة فقط
-    const visible = [...completed, ...ended].sort((a, b) => {
-        const at = a.started_at ? +new Date(a.started_at) : 0;
-        const bt = b.started_at ? +new Date(b.started_at) : 0;
-        return bt - at;
-    });
-const uniqueVisible = Array.from(new Map(visible.map(item => [item.id, item])).values());
-    // "المعلقة" هي أي زيارة غير مكتملة وغير منهاة
-    const pending = incompleteCount - ended.length;
-
+    const completed = snapshots.filter((s) => s.status === "finished");
+    const ended = snapshots.filter((s) => s.status === "ended");
+    const visible = [...completed, ...ended].sort(
+      (a, b) =>
+        (b.started_at ? +new Date(b.started_at) : 0) - (a.started_at ? +new Date(a.started_at) : 0)
+    );
+    const uniqueVisible = Array.from(new Map(visible.map((item) => [item.id, item])).values());
+    const pending = Math.max(0, incompleteCount - ended.length);
     return {
       completedCount: completed.length,
-      pendingCount: Math.max(0, pending), // تأكد من أنها ليست أقل من صفر
+      pendingCount: pending,
       visibleSnapshots: uniqueVisible,
     };
   }, [snapshots, incompleteCount]);
 
+  /* ========= i18n ========= */
   const t = useMemo(
     () => ({
       back: ar ? "رجوع" : "Back",
@@ -710,13 +892,29 @@ const uniqueVisible = Array.from(new Map(visible.map(item => [item.id, item])).v
       pickBranch: ar ? "اختر فرعًا" : "Pick a branch",
       noDates: ar ? "لا توجد تواريخ" : "No dates",
       completed: ar ? "مكتملة" : "Completed",
-      incomplete: ar ? "غير كاملة" : "Incomplete",
-      promoter: ar ? "تقارير المروج" : "Promoter Reports",
-      tlDetails: ar ? "تفاصيل قائد الفريق" : "TL Details",
+      pending: ar ? "معلقة" : "Pending",
       pickDate: ar ? "اختر تاريخًا واحدًا" : "Pick a single date",
+      ended: ar ? "تم إنهاؤها" : "Ended",
+      showEndReason: ar ? "عرض سبب الإنهاء" : "Show End Reason",
+      close: ar ? "إغلاق" : "Close",
+      region: ar ? "المنطقة" : "Region",
+      city: ar ? "المدينة" : "City",
+      market: ar ? "السوق" : "Market",
+      allRegions: ar ? "كل المناطق" : "All regions",
+      allCities: ar ? "كل المدن" : "All cities",
+      allMarkets: ar ? "كل الأسواق" : "All markets",
     }),
     [ar]
   );
+
+  // فلترة قائمة TLs بالمسموح
+  const visibleTLs = useMemo(
+    () => (permTLs ? tls.filter((tl) => permTLs.has(tl.id)) : tls),
+    [tls, permTLs]
+  );
+
+  // حالة تعطيل TL
+  const tlSelectDisabled = tlDisabled || lockedTL || visibleTLs.length === 0;
 
   return (
     <div style={{ maxWidth: 1400, margin: "0 auto", padding: 16, color: "var(--text)" }}>
@@ -757,7 +955,9 @@ const uniqueVisible = Array.from(new Map(visible.map(item => [item.id, item])).v
                 animation: "rt 0.9s linear infinite",
               }}
             />
-            <div style={{ textAlign: "center", color: "var(--text)" }}>{ar ? "جاري التحميل..." : "Loading..."}</div>
+            <div style={{ textAlign: "center", color: "var(--text)" }}>
+              {ar ? "جاري التحميل..." : "Loading..."}
+            </div>
           </div>
         </div>
       )}
@@ -775,52 +975,80 @@ const uniqueVisible = Array.from(new Map(visible.map(item => [item.id, item])).v
           background: "color-mix(in oklab, var(--card) 82%, transparent)",
         }}
       >
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}>
+        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(6, minmax(0, 1fr))" }}>
           <Capsule label={ar ? "من" : "From"}>
-            <DateField label="" value={filters.from} onChange={(v) => setFilters((s) => ({ ...s, from: v }))} locale={ar ? "ar-EG" : "en-GB"} />
+            <DateField label="" value={gFilters.from} onChange={(v) => updateFilter("from", v)} locale={ar ? "ar-EG" : "en-GB"} />
           </Capsule>
-
           <Capsule label={ar ? "إلى" : "To"}>
-            <DateField label="" value={filters.to} onChange={(v) => setFilters((s) => ({ ...s, to: v }))} locale={ar ? "ar-EG" : "en-GB"} />
+            <DateField label="" value={gFilters.to} onChange={(v) => updateFilter("to", v)} locale={ar ? "ar-EG" : "en-GB"} />
           </Capsule>
 
-          <Capsule label={ar ? "المنطقة" : "Region"} summary={filters.regions.length ? `${filters.regions.length}` : ar ? "الكل" : "All"}>
-            <MultiDropdown options={regionsOpts} values={filters.regions} onChange={(v) => setFilters((s) => ({ ...s, regions: v }))} placeholder={ar ? "الكل" : "All"} />
+          <Capsule label={t.region} summary={filters.region || (ar ? "الكل" : "All")}>
+            <SelectSingle
+              options={regionsOpts}
+              value={filters.region}
+              placeholder={t.allRegions}
+              onChange={(v) => {
+                if (lockedRegion) return; // تجاهل لو مقفول
+                setFilters((s) => ({ ...s, region: v, city: "", market: "" }));
+              }}
+              disabled={lockedRegion}
+            />
           </Capsule>
-          <Capsule label={ar ? "المدينة" : "City"} summary={filters.cities.length ? `${filters.cities.length}` : ar ? "الكل" : "All"}>
-            <MultiDropdown options={citiesOpts} values={filters.cities} onChange={(v) => setFilters((s) => ({ ...s, cities: v }))} placeholder={ar ? "الكل" : "All"} />
+
+          <Capsule label={t.city} summary={filters.city || (ar ? "الكل" : "All")}>
+            <SelectSingle
+              options={citiesOpts}
+              value={filters.city}
+              placeholder={t.allCities}
+              onChange={(v) => {
+                if (lockedCity) return;
+                setFilters((s) => ({ ...s, city: v, market: "" }));
+              }}
+              disabled={lockedCity}
+            />
           </Capsule>
-          <Capsule label={ar ? "السوق" : "Market"} summary={filters.marketsNames.length ? `${filters.marketsNames.length}` : ar ? "الكل" : "All"}>
-            <MultiDropdown options={marketsOpts} values={filters.marketsNames} onChange={(v) => setFilters((s) => ({ ...s, marketsNames: v }))} placeholder={ar ? "الكل" : "All"} />
+
+          <Capsule label={t.market} summary={filters.market || (ar ? "الكل" : "All")}>
+            <SelectSingle
+              options={marketsOpts}
+              value={filters.market}
+              placeholder={t.allMarkets}
+              onChange={(v) => {
+                if (lockedStore) return;
+                setFilters((s) => ({ ...s, market: v }));
+              }}
+              disabled={lockedStore}
+            />
+          </Capsule>
+
+          {/* Team Leader quick toggle */}
+          <Capsule label={t.tls} summary={tlSelectDisabled ? (ar ? "غير متاح" : "N/A") : undefined}>
+            <SelectObject
+              options={[
+                ...(lockedTL || tlDisabled ? [] : [{ value: "ALL", label: ar ? "كل الفريق" : "All Team" }]),
+                ...visibleTLs.map((u) => ({
+                  value: u.id,
+                  label: (ar ? u.arabic_name : u.name) || "—",
+                })),
+              ]}
+              value={
+                lockedTL && userSettings?.Team_leader?.[0]
+                  ? userSettings.Team_leader[0]
+                  : (gFilters.team_leader_id || (tlDisabled ? "" : "ALL"))
+              }
+              onChange={(v) => {
+                if (lockedTL) return;
+                updateFilter("team_leader_id", v || (tlDisabled ? "" : "ALL"));
+              }}
+              placeholder={ar ? "اختر قائد فريق" : "Select a TL"}
+              disabled={tlSelectDisabled}
+            />
           </Capsule>
         </div>
       </div>
 
-      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(260px, 22%) 1fr" }}>
-        {/* TL Column */}
-        <div style={{ minHeight: 480, borderRadius: 16, border: cardBorder, background: "var(--card)", padding: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{t.tls}</h3>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button type="button" onClick={() => setFilters((s) => ({ ...s, teamLeaderId: "ALL" }))} style={btn(undefined, filters.teamLeaderId === "ALL")}>
-              {ar ? "كل الفريق" : "All Team"}
-            </button>
-            {tls.map((u) => {
-              const sel = filters.teamLeaderId === u.id;
-              return (
-                <button key={u.id} type="button" onClick={() => setFilters((s) => ({ ...s, teamLeaderId: u.id }))} style={btn(undefined, sel)}>
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {(ar ? u.arabic_name : u.name) || u.username || "—"}
-                  </span>
-                  <span style={{ opacity: 0.6 }}>▾</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
+      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr" }}>
         {/* Right side */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {/* Users */}
@@ -924,12 +1152,15 @@ const uniqueVisible = Array.from(new Map(visible.map(item => [item.id, item])).v
             )}
           </Panel>
 
-         {/* Dates */}
-          <Panel title={`${t.dates} — ${ar ? 'مكتملة' : 'Completed'}: ${completedCount} | ${ar ? 'معلقة' : 'Pending'}: ${pendingCount}`} right={<PillCount n={visibleSnapshots.length} />}>
+          {/* Dates */}
+          <Panel
+            title={`${t.dates} — ${t.completed}: ${completedCount} | ${t.pending}: ${pendingCount}`}
+            right={<PillCount n={visibleSnapshots.length} />}
+          >
             {selectedUsers.length === 0 ? (
               <EmptyBox text={t.pickUser} />
             ) : selectedBranches.length === 0 ? (
-              <EmptyBox text={t.pickBranch} />
+              <EmptyBox text={t.pickChain} />
             ) : visibleSnapshots.length === 0 ? (
               <EmptyBox text={t.noDates} />
             ) : (
@@ -938,13 +1169,12 @@ const uniqueVisible = Array.from(new Map(visible.map(item => [item.id, item])).v
                 <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
                   {visibleSnapshots.map((s) => {
                     const sel = selectedSnapshotIds.includes(s.id);
-                    const visitTimestamp = s.started_at || s.finished_at; // 👈 استخدم أول تاريخ متاح
+                    const visitTimestamp = s.started_at || s.finished_at;
                     const started = visitTimestamp
                       ? new Date(visitTimestamp).toLocaleString(ar ? "ar-EG" : "en-GB", { timeZone: "Asia/Riyadh" })
                       : "—";
 
-                    // الحالة 1: الزيارة مكتملة
-                    if (s.status === 'finished') {
+                    if (s.status === "finished") {
                       return (
                         <button key={s.id} type="button" onClick={() => setSelectedSnapshotIds([s.id])} style={btn(56, sel)}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 4, textAlign: ar ? "right" : "left" }}>
@@ -956,70 +1186,53 @@ const uniqueVisible = Array.from(new Map(visible.map(item => [item.id, item])).v
                       );
                     }
 
-                   // الحالة 2: الزيارة تم إنهاؤها
-                  if (s.status === 'ended') {
-                    return (
-                      <div
-                        key={s.id}
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 8,
-                          width: '100%',
-                          padding: '10px 12px',
-                          borderRadius: 12,
-                          border: '1px solid var(--input-border)',
-                          background: 'var(--input-bg)',
-                          textAlign: ar ? "right" : "left",
-                        }}
-                      >
-                        {/* الجزء العلوي: المعلومات */}
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                          <strong>{started}</strong>
-                          <span style={{ opacity: 0.85, fontSize: 12, color: '#f87171', fontWeight: 'bold' }}>
-                            {ar ? "تم إنهاؤها" : "Ended"}
-                          </span>
-                        </div>
-
-                        {/* الجزء السفلي: الزر */}
-                        <button 
-  type="button" 
-  onClick={() => {
-    let photoUrl = s.end_visit_photo || ""; // القيمة الافتراضية هي النص الخام
-    try {
-      // نحاول تحليل النص كقائمة
-      const photos = JSON.parse(photoUrl);
-      // إذا نجح التحليل وكانت قائمة وبها عناصر، نأخذ الرابط الأول
-      if (Array.isArray(photos) && photos.length > 0) {
-        photoUrl = photos[0];
-      }
-    } catch {
-      // إذا فشل التحليل، لا تفعل شيئًا، لأن photoUrl تحتوي بالفعل على القيمة الصحيحة كنص
-    }
-    setEndReasonViewer({
-    open: true, 
-    reasonEn: s.end_reason_en || '', 
-    reasonAr: s.end_reason_ar || '', 
-    photo: photoUrl
-  });
-  }}
+                    if (s.status === "ended") {
+                      return (
+                        <div
+                          key={s.id}
                           style={{
-                            padding: '8px 12px',
-                            borderRadius: 10,
-                            border: '1px solid var(--divider)',
-                            background: 'var(--card)',
-                            color: 'var(--text)',
-                            cursor: 'pointer',
-                            fontWeight: 700,
-                            width: '100%',
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 8,
+                            width: "100%",
+                            padding: "10px 12px",
+                            borderRadius: 12,
+                            border: "1px solid var(--input-border)",
+                            background: "var(--input-bg)",
+                            textAlign: ar ? "right" : "left",
                           }}
                         >
-                          {ar ? "عرض سبب الإنهاء" : "Show End Reason"}
-                        </button>
-                      </div>
-                    );
-                  }
-                    
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            <strong>{started}</strong>
+                            <span style={{ opacity: 0.85, fontSize: 12, color: "#f87171", fontWeight: "bold" }}>
+                              {t.ended}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              let photoUrl = s.end_visit_photo || "";
+                              try {
+                                const photos = JSON.parse(photoUrl);
+                                if (Array.isArray(photos) && photos.length > 0) photoUrl = photos[0];
+                              } catch {
+                                // ignore
+                              }
+                              setEndReasonViewer({
+                                open: true,
+                                reasonEn: s.end_reason_en || "",
+                                reasonAr: s.end_reason_ar || "",
+                                photo: photoUrl,
+                              });
+                            }}
+                            style={{ ...btnSm(false), width: "100%" }}
+                          >
+                            {t.showEndReason}
+                          </button>
+                        </div>
+                      );
+                    }
                     return null;
                   })}
                 </div>
@@ -1039,76 +1252,77 @@ const uniqueVisible = Array.from(new Map(visible.map(item => [item.id, item])).v
                   textAlign: "center",
                 }}
               >
-                {ar ? "اختر تاريخًا لعرض البيانات" : "Pick a date to view data"}
+                {t.pickDate}
               </div>
             ) : (
               <>
                 <div className="mb-3">
                   <StepsToolbar value={currentStep} onChange={setCurrentStep} onlyKeys={availableSteps} />
                 </div>
-
                 <StepDataTable
-  step={currentStep}
-  pageSize={25}
-  visitId={activeVisitId}
-  // 👇 تمرير التاريخ المحدد كنطاق ليوم واحد
-  startDate={activeDate} 
-  endDate={activeDate}
-/>
+                  step={currentStep}
+                  pageSize={25}
+                  visitId={activeVisitId}
+                  startDate={activeDate}
+                  endDate={activeDate}
+                />
               </>
             )}
           </Panel>
-{/* Modal to show End Reason */}
-      {endReasonViewer.open && (
-        <div
-          onClick={() => setEndReasonViewer({ open: false, reasonEn: "", reasonAr: "", photo: "" })}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 10000,
-            background: "rgba(0,0,0,0.7)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: "relative",
-              maxWidth: 400,
-              width: "100%",
-              background: "var(--card)",
-              borderRadius: 16,
-              padding: 24,
-              border: "1px solid var(--divider)",
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 16
-            }}
-          >
-            <h3 style={{margin: 0}}>{ar ? "سبب إنهاء الزيارة" : "Visit End Reason"}</h3>
-           <p style={{margin: 0, background: 'var(--input-bg)', padding: 12, borderRadius: 8}}>
-  {(ar ? endReasonViewer.reasonAr : endReasonViewer.reasonEn) || (ar ? "لا يوجد سبب مسجل." : "No reason recorded.")}
-</p>
-            {endReasonViewer.photo && (
-    <div>
-        <h4 style={{margin: '0 0 8px 0'}}>{ar ? "الصورة المرفقة" : "Attached Photo"}</h4>
-        <div style={{position: 'relative', width: '100%', aspectRatio: '1 / 1', borderRadius: 8, overflow: 'hidden'}}>
-            <SupaImg src={endReasonViewer.photo} alt="End visit photo" unoptimized fill style={{objectFit: 'cover'}} />
-        </div>
-    </div>
-)}
-            <button
+
+          {/* Modal to show End Reason */}
+          {endReasonViewer.open && (
+            <div
               onClick={() => setEndReasonViewer({ open: false, reasonEn: "", reasonAr: "", photo: "" })}
-              style={{...btnSm(true), alignSelf: 'flex-end', minWidth: 100}}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 10000,
+                background: "rgba(0,0,0,0.7)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 16,
+              }}
             >
-              {ar ? "إغلاق" : "Close"}
-            </button>
-          </div>
-        </div>
-      )}
+              <div
+                onClick={(e) => e.stopPropagation() }
+                style={{
+                  position: "relative",
+                  maxWidth: 400,
+                  width: "100%",
+                  background: "var(--card)",
+                  borderRadius: 16,
+                  padding: 24,
+                  border: "1px solid var(--divider)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 16,
+                }}
+              >
+                <h3 style={{ margin: 0 }}>{ar ? "سبب إنهاء الزيارة" : "Visit End Reason"}</h3>
+                <p style={{ margin: 0, background: "var(--input-bg)", padding: 12, borderRadius: 8 }}>
+                  {(ar ? endReasonViewer.reasonAr : endReasonViewer.reasonEn) ||
+                    (ar ? "لا يوجد سبب مسجل." : "No reason recorded.")}
+                </p>
+                {endReasonViewer.photo && (
+                  <div>
+                    <h4 style={{ margin: "0 0 8px 0" }}>{ar ? "الصورة المرفقة" : "Attached Photo"}</h4>
+                    <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", borderRadius: 8, overflow: "hidden" }}>
+                      <SupaImg src={endReasonViewer.photo} alt="End visit photo" unoptimized fill style={{ objectFit: "cover" }} />
+                    </div>
+                  </div>
+                )}
+                <button
+                  onClick={() => setEndReasonViewer({ open: false, reasonEn: "", reasonAr: "", photo: "" })}
+                  style={{ ...btnSm(true), alignSelf: "flex-end", minWidth: 100 }}
+                >
+                  {t.close}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Buttons */}
           <div style={{ display: "flex", justifyContent: ar ? "flex-end" : "flex-start", gap: 12, gridColumn: "1 / -1" }}>
             <Link

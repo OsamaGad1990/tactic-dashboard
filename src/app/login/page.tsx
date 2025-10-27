@@ -18,6 +18,34 @@ type PortalUser = {
   [key: string]: unknown;
 };
 
+// يحوِّل أي قيمة لقائمة صحية أو null
+function toStrArrayOrNull(v: unknown): string[] | null {
+  if (v == null) return null;
+  if (Array.isArray(v)) {
+    const arr = v.map(String).map(s => s.trim()).filter(Boolean);
+    return arr.length ? arr : null;
+  }
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return null;
+    // لاحتمال وجود CSV في الداتابيز
+    const parts = s.includes(",") ? s.split(",").map(x => x.trim()).filter(Boolean) : [s];
+    return parts.length ? parts : null;
+  }
+  return null;
+}
+
+type UserFiltersType = {
+  default_region: string[] | null;
+  default_city: string[] | null;
+  allowed_markets: string[] | null;
+  Team_leader: string[] | null;
+  notifications?: boolean;
+  requests?: boolean;
+};
+
+const LS_KEY = "currentUser"; // ★ توحيد المفتاح
+
 /* ===== Icons ===== */
 const EyeIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" {...props}>
@@ -64,9 +92,9 @@ export default function LoginPage() {
 
   function getStoredUser(): PortalUser | null {
     try {
-      const ls = typeof window !== "undefined" ? localStorage.getItem("currentUser") : null;
+      const ls = typeof window !== "undefined" ? localStorage.getItem(LS_KEY) : null;
       if (ls) return JSON.parse(ls) as PortalUser;
-      const ss = typeof window !== "undefined" ? sessionStorage.getItem("currentUser") : null;
+      const ss = typeof window !== "undefined" ? sessionStorage.getItem(LS_KEY) : null;
       if (ss) return JSON.parse(ss) as PortalUser;
       return null;
     } catch {
@@ -78,6 +106,7 @@ export default function LoginPage() {
     const role = String(user?.role || "").toLowerCase();
     if (role === "super_admin") router.replace("/super-admin/dashboard");
     else if (role === "admin") router.replace("/admin/dashboard");
+    else router.replace("/no-access"); // ★ إضافة التوجيه الافتراضي
   }, [router]);
 
   useEffect(() => {
@@ -129,9 +158,9 @@ export default function LoginPage() {
       const isSuper = role === "super_admin";
       const isAdmin = role === "admin";
       if (!isSuper && !isAdmin) {
-        setErrorMsg(TEXT.forbidden);
-        setLoading(false);
-        return;
+        // بدل ما نمنع بالكامل، هنكمّل تسجيل الدخول بس هنوجّه لـ /no-access
+        // لو مش عايز كده، رجّع الشرط القديم.
+        // setErrorMsg(TEXT.forbidden); setLoading(false); return;
       }
 
       const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
@@ -180,9 +209,16 @@ export default function LoginPage() {
         auth_user_id: user.auth_user_id || authUserId || undefined,
       };
 
-      const storage = rememberMe ? localStorage : sessionStorage;
-      storage.setItem("currentUser", JSON.stringify(safeUser));
-      storage.setItem("rememberMe", rememberMe ? "1" : "0");
+      // ★ احفظ في مخزن واحد وامسح الآخر لتفادي التعارض
+      if (rememberMe) {
+        localStorage.setItem(LS_KEY, JSON.stringify(safeUser));
+        sessionStorage.removeItem(LS_KEY);
+        localStorage.setItem("rememberMe", "1");
+      } else {
+        sessionStorage.setItem(LS_KEY, JSON.stringify(safeUser));
+        localStorage.removeItem(LS_KEY);
+        localStorage.setItem("rememberMe", "0");
+      }
 
       let sessionKey: string;
       if (typeof globalThis?.crypto?.randomUUID === "function") {
@@ -196,42 +232,53 @@ export default function LoginPage() {
         platform: "web",
         app_version: "portal-v1",
       });
-      storage.setItem("session_key", sessionKey);
-      
+      (rememberMe ? localStorage : sessionStorage).setItem("session_key", sessionKey);
+
       if (rememberMe) {
         try { localStorage.setItem("rememberedUsername", username.trim()); } catch {}
       }
 
-      // =============================================================
-      // START: جلب وحفظ فلاتر المستخدم (المحدثة لتشمل default_city)
-      // =============================================================
+      // ===== Fetch & normalize user settings (filters) =====
       try {
-        // نطلب كل الأعمدة الجديدة
         const { data: settings, error: settingsError } = await supabase
-.from('user_settings')
-.select('*') 
-.eq('user_id', user.id)
-.single();
+          .from("user_settings")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle(); // بدلاً من single() لنتفادى PGRST116
 
-        if (settingsError && settingsError.code !== 'PGRST116') {
-          throw settingsError;
-        }
-        
+        if (settingsError) throw settingsError;
+
         if (settings) {
-          console.log('User settings fetched from DB:', settings);
-          localStorage.setItem('userFilters', JSON.stringify(settings));
+          // بعض الداتابيز بتسمي Team_leader/ team_leader
+          const normalized: UserFiltersType = {
+            default_region: toStrArrayOrNull(settings.default_region),
+            default_city: toStrArrayOrNull(settings.default_city),
+            allowed_markets: toStrArrayOrNull(settings.allowed_markets),
+            Team_leader: toStrArrayOrNull(settings.Team_leader ?? settings.team_leader),
+            notifications: settings.notifications !== false, // true لو مش موجودة
+            requests: settings.requests !== false,           // true لو مش موجودة
+          };
+
+          // لو أي Array طلعت فاضية نحولها لـ null
+          const clean = {
+            ...normalized,
+            default_region: normalized.default_region && normalized.default_region.length ? normalized.default_region : null,
+            default_city: normalized.default_city && normalized.default_city.length ? normalized.default_city : null,
+            allowed_markets: normalized.allowed_markets && normalized.allowed_markets.length ? normalized.allowed_markets : null,
+            Team_leader: normalized.Team_leader && normalized.Team_leader.length ? normalized.Team_leader : null,
+          };
+
+          localStorage.setItem("userFilters", JSON.stringify(clean));
         } else {
-          localStorage.removeItem('userFilters');
+          localStorage.removeItem("userFilters");
         }
       } catch (filterError) {
-        console.error("Error fetching user settings, proceeding without filters:", filterError);
-        localStorage.removeItem('userFilters');
+        console.error("Error fetching/normalizing user settings:", filterError);
+        localStorage.removeItem("userFilters");
       }
-      // =============================================================
-      // END: نهاية كود الفلاتر
-      // =============================================================
 
-      const target = isSuper ? "/super-admin/dashboard" : "/admin/dashboard";
+      // ★ توجيه حسب الدور بما فيهم no-access
+      const target = isSuper ? "/super-admin/dashboard" : (isAdmin ? "/admin/dashboard" : "/no-access");
       success = true;
       router.push(target);
       return;

@@ -9,18 +9,16 @@ type ScheduleRow = {
   id: UUID;
   client_id: UUID | null;
   recipient_email: string;
-  // filters تبقى موجودة بالجدول لكن احنا مش هنستخدمها هنا، الـ RPC بتطبّقها جوة الـ DB
   filters: unknown | null;
   is_active: boolean;
 };
 
-// شكل الصفوف الراجعة من get_report_visits (الحد الأدنى اللازم للتقرير)
+// شكل الجدول في الإيميل
 type VisitRow = {
   user_name: string | null;
   team_leader_name: string | null;
   market_store: string | null;
   market_branch: string | null;
-  /** ⬇⬇ أضف هذان الحقلان */
   market_region: string | null;
   market_city: string | null;
   started_at: string | null;
@@ -30,11 +28,52 @@ type VisitRow = {
   jp_state?: "IN JP" | "OUT OF JP" | null;
 };
 
+// صفوف RPC get_yesterday_visits_details
+type YestDetailRow = {
+  id: UUID;
+  status: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  end_reason: string | null;
+  end_reason_ar: string | null;
+  end_reason_en: string | null;
+  user_id: UUID | null;
+  user_name: string | null;
+  user_arabic_name: string | null;
+  user_username: string | null;
+  team_leader_id: UUID | null;
+  team_leader_name: string | null;
+  team_leader_arabic_name: string | null;
+  team_leader_username: string | null;
+  market_id: UUID | null;
+  market_store: string | null;
+  market_branch: string | null;
+  market_city: string | null;
+  market_region: string | null;
+  end_visit_photo: string | null;
+  // قد ما يكونش موجود jp_state هنا; لو عندك عمود، ضيفه
+  jp_state?: "IN JP" | "OUT OF JP" | null;
+};
+
+type Filters = {
+  client_id?: string | null;      // ⬅ مهم لنداء RPC اليدوي
+  team_leader_id?: string | null;
+  user_id?: string | null;
+  region?: string | null;
+  city?: string | null;
+  store?: string | null;
+  branch?: string | null;
+  jp_state?: ("IN JP" | "OUT OF JP") | null;
+  status?: string | null;
+  date_from?: string | null;  // اختياري (هنتجاهله ونستخدم snapshot_date أمس)
+  date_to?: string | null;    // اختياري
+};
+
 /* ========= CORS ========= */
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-cron-key",
+    "authorization, x-client-info, apikey, content-type, x-cron-key, x-schedule",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -60,9 +99,7 @@ function diffClock(start: string | null, end: string | null): string {
   const m = Math.floor((secs % 3600) / 60);
   const s = secs % 60;
   return h > 0
-    ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(
-        s
-      ).padStart(2, "0")}`
+    ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
     : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
@@ -93,11 +130,9 @@ function renderTable(rows: VisitRow[], dateLabel: string): string {
       <tbody>`;
 
   const body = filtered.length
-    ? filtered
-        .map((r) => {
-          const jp = (r.jp_state === "IN JP" || r.jp_state === "OUT OF JP") ? r.jp_state : "IN JP";
-
-          return `
+    ? filtered.map((r) => {
+        const jp = (r.jp_state === "IN JP" || r.jp_state === "OUT OF JP") ? r.jp_state : "IN JP";
+        return `
           <tr style="text-align:center">
             <td>${r.user_name ?? "-"}</td>
             <td>${r.team_leader_name ?? "-"}</td>
@@ -111,15 +146,13 @@ function renderTable(rows: VisitRow[], dateLabel: string): string {
             <td>${r.status ?? (r.end_reason ? "ended" : "pending")}</td>
             <td>${jp}</td>
           </tr>`;
-        })
-        .join("")
+      }).join("")
     : `<tr><td colspan="11" style="text-align:center;color:#888">لا توجد زيارات</td></tr>`;
 
   return `${head}${body}</tbody></table>`;
 }
 
 function ksaYesterdayISODate(): string {
-  // أمس بتوقيت الرياض كـ YYYY-MM-DD
   const nowUtc = new Date();
   const ksaNow = new Date(nowUtc.getTime() + 3 * 60 * 60 * 1000); // UTC+3
   const ksaY = new Date(ksaNow);
@@ -127,20 +160,54 @@ function ksaYesterdayISODate(): string {
   return ksaY.toISOString().slice(0, 10);
 }
 
+/* ========= Logging Helpers (to public.email_job_log) ========= */
+function safePreview(payload: unknown, max = 500): string {
+  try {
+    const s = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return s.length > max ? s.slice(0, max) : s;
+  } catch {
+    return "[unserializable]";
+  }
+}
+
+async function logEmail(
+  sbAdmin: ReturnType<typeof createClient>,
+  {
+    note,
+    status_code,
+    error_msg,
+    resp_preview,
+  }: { note: string; status_code: number; error_msg?: string | null; resp_preview?: string | null },
+) {
+  try {
+    const insert = {
+      // ran_at لديه default now()
+      note,
+      status_code,
+      error_msg: error_msg ?? null,
+      resp_preview: resp_preview ?? null,
+    };
+    const { error } = await sbAdmin.from("email_job_log").insert(insert);
+    if (error) console.warn("[email_job_log] insert failed:", error.message);
+  } catch (e) {
+    console.warn("[email_job_log] unexpected error:", (e as Error).message);
+  }
+}
+
 /* ========= Handler ========= */
 serve(async (req: Request) => {
-  // Preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    const PROJECT_URL = Deno.env.get("PROJECT_URL")!;
-    const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY")!;
-    const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
-    const MAIL_FROM = Deno.env.get("MAIL_FROM") || "no-reply@tai.com.sa";
-    const CRON_SECRET = Deno.env.get("CRON_SECRET") || "";
+  // هنستخدم نفس مشروع Supabase (PROJECT_URL + SERVICE_ROLE_KEY) في التنفيذ وفي التسجيل بالجدول
+  const PROJECT_URL = Deno.env.get("PROJECT_URL")!;
+  const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY")!;
+  const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
+  const MAIL_FROM = Deno.env.get("MAIL_FROM") || "no-reply@tai.com.sa";
+  const CRON_SECRET = Deno.env.get("CRON_SECRET") || "";
 
+  try {
     if (!PROJECT_URL || !SERVICE_ROLE_KEY || !RESEND_API_KEY) {
       return new Response(
         JSON.stringify({ ok: false, error: "Missing required secrets" }),
@@ -148,27 +215,28 @@ serve(async (req: Request) => {
       );
     }
 
-   const headerCron = req.headers.get("x-cron-key");
-const isCron = !!CRON_SECRET && headerCron === CRON_SECRET;
-const hasBearer = !!req.headers.get("authorization");
-// ✅ يسمح بنداء المجدول الداخلي من Supabase
-const isScheduler = !!req.headers.get("x-schedule");
+    // Flags
+    const headerCron = req.headers.get("x-cron-key");
+    const isCronKey = !!CRON_SECRET && headerCron === CRON_SECRET;
+    const hasBearer = !!req.headers.get("authorization");
+    const isScheduler = !!req.headers.get("x-schedule"); // GitHub Action
 
-if (!(isCron || hasBearer || isScheduler)) {
-  return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }), {
-    status: 401,
-    headers: { ...corsHeaders, "content-type": "application/json" },
-  });
-}
+    if (!(isCronKey || hasBearer || isScheduler)) {
+      return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "content-type": "application/json" },
+      });
+    }
 
-
-    // Body (للوضع اليدوي فقط)
+    // Body (manual only)
     type ManualBody = {
-      report_id?: string;           // ✅ دعم report_id المباشر في الوضع اليدوي
+      report_id?: string;
       recipient_emails?: string[];
+      filters?: Filters; // يدوي: فلاتر من الداشبورد
     };
+
     let bodyJson: ManualBody = {};
-    if (!isCron) {
+    if (!isCronKey && !isScheduler) {
       try {
         const raw = await req.json();
         if (raw && typeof raw === "object") {
@@ -179,29 +247,69 @@ if (!(isCron || hasBearer || isScheduler)) {
               Array.isArray(b.recipient_emails) && b.recipient_emails.every((x) => typeof x === "string")
                 ? (b.recipient_emails as string[])
                 : undefined,
+            filters: typeof b.filters === "object" && b.filters ? (b.filters as Filters) : undefined,
           };
         }
-      } catch {
-        /* ignore non-JSON */
-      }
+      } catch { /* ignore */ }
     }
 
     const sb = createClient(PROJECT_URL, SERVICE_ROLE_KEY);
     const dateY = ksaYesterdayISODate();
 
-    // ✅ استخدام الدالة الجاهزة get_report_visits_v4 من قاعدة البيانات
+    // ===== RPCs =====
     const buildVisits = async (reportId: string) => {
       const { data, error } = await sb.rpc("get_report_visits_v4", { report_id: reportId });
       if (error) throw error;
       return (data ?? []) as VisitRow[];
     };
 
-    // ======== Resend types + sendEmail (بدون any) ========
-    type ResendOk = { id: string };
-    type ResendErr = { message?: string; error?: unknown };
-    type ResendResp = ResendOk & Partial<ResendErr>;
+    // يدوي: استخدم get_yesterday_visits_details ثم فلترة بالكود
+    const buildVisitsFromFilters = async (filters: Filters) => {
+      if (!filters.client_id) throw new Error("filters.client_id is required for manual filters");
+      const { data, error } = await sb.rpc("get_yesterday_visits_details", {
+        p_client_id: filters.client_id,
+        p_snapshot_date: dateY, // أمس بتوقيت الرياض
+      });
+      if (error) throw error;
 
+      const raw = (data ?? []) as YestDetailRow[];
+
+      // فلترة بالكود حسب بقية الفلاتر الاختيارية
+      const f = (v: YestDetailRow) => {
+        if (filters.team_leader_id && String(v.team_leader_id) !== String(filters.team_leader_id)) return false;
+        if (filters.user_id        && String(v.user_id)        !== String(filters.user_id))        return false;
+        if (filters.region         && v.market_region !== filters.region)                           return false;
+        if (filters.city           && v.market_city   !== filters.city)                             return false;
+        if (filters.store          && v.market_store  !== filters.store)                            return false;
+        if (filters.branch         && v.market_branch !== filters.branch)                           return false;
+        if (filters.status         && v.status        !== filters.status)                           return false;
+        if (filters.jp_state       && v.jp_state      !== filters.jp_state)                         return false;
+        return true;
+      };
+
+      const filtered = raw.filter(f);
+
+      // تحويل لشكل VisitRow المستخدم في الإيميل
+      const mapped: VisitRow[] = filtered.map((r) => ({
+        user_name: r.user_name,
+        team_leader_name: r.team_leader_name,
+        market_store: r.market_store,
+        market_branch: r.market_branch,
+        market_region: r.market_region,
+        market_city: r.market_city,
+        started_at: r.started_at,
+        finished_at: r.finished_at,
+        status: r.status,
+        end_reason: r.end_reason,
+        jp_state: r.jp_state ?? null,
+      }));
+
+      return mapped;
+    };
+
+    // ===== Resend =====
     const sendEmail = async (to: string, html: string) => {
+      console.log("[MAIL_FROM USING]", MAIL_FROM);
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
@@ -209,9 +317,7 @@ if (!(isCron || hasBearer || isScheduler)) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          // جرّب مؤقتًا from = onboarding@resend.dev
-          // وبعد ما توثّق الدومين ارجع لـ MAIL_FROM
-          from: MAIL_FROM?.includes("@resend.dev") ? MAIL_FROM : "onboarding@resend.dev",
+          from: MAIL_FROM,
           to,
           subject: "Daily Report",
           html,
@@ -219,33 +325,23 @@ if (!(isCron || hasBearer || isScheduler)) {
       });
 
       let json: unknown = null;
-      try {
-        json = await res.json();
-      } catch {
-        // احتمال مفيش body — تجاهل
-      }
-
+      try { json = await res.json(); } catch {}
       console.log("[RESEND STATUS]", res.status, res.statusText);
       if (json) console.log("[RESEND JSON]", JSON.stringify(json));
-
       if (!res.ok) {
-        const j = json as ResendResp | null;
+        const j = json as { message?: string; error?: unknown } | null;
         const msg = j?.message ?? (j?.error ? String(j.error) : res.statusText || "RESEND_ERROR");
         throw new Error(msg);
       }
-
-      const j = json as ResendResp | null;
-      if (!j?.id) {
-        throw new Error("Resend did not return an id");
-      }
-
-      return { ok: true as const, id: j.id };
+      const j = json as { id?: string } | null;
+      if (!j?.id) throw new Error("Resend did not return an id");
+      return { ok: true as const, id: j.id, status: 200, json };
     };
 
     let totalSent = 0;
 
-    if (isCron) {
-      // ===== وضع الكرون: نقرأ كل الصفوف المفعّلة ونستدعي الRPC بفلاتر الجدول تلقائيًا =====
+    /* ========= CRON MODE ========= */
+    if (isCronKey || isScheduler) {
       const { data: schedules, error: sErr } = await sb
         .from("scheduled_email_reports")
         .select("id, client_id, recipient_email, filters, is_active")
@@ -255,42 +351,68 @@ if (!(isCron || hasBearer || isScheduler)) {
       const list = (schedules ?? []) as ScheduleRow[];
 
       for (const s of list) {
-        const visits = await buildVisits(s.id);
+        const visits = await buildVisits(s.id); // الـ RPC يطبّق فلاتر السطر داخل DB
         const html = renderTable(visits, dateY);
         try {
           const r = await sendEmail(s.recipient_email, html);
           console.log("Email OK (cron):", s.recipient_email, r.id);
           totalSent++;
+
+          // log success
+          await logEmail(sb, {
+            note: `cron send to ${s.recipient_email} (report_id=${s.id})`,
+            status_code: r.status,
+            error_msg: null,
+            resp_preview: safePreview({ id: r.id, recipient: s.recipient_email, sent: true }),
+          });
         } catch (err) {
-          console.log("Email FAIL (cron):", s.recipient_email, String(err));
+          const errMsg = (err as Error).message || String(err);
+          console.log("Email FAIL (cron):", s.recipient_email, errMsg);
+
+          // log failure
+          await logEmail(sb, {
+            note: `cron send failed to ${s.recipient_email} (report_id=${s.id})`,
+            status_code: 500,
+            error_msg: errMsg,
+            resp_preview: safePreview({ recipient: s.recipient_email, sent: false }),
+          });
         }
       }
+
+      // log summary
+      await logEmail(sb, {
+        note: `cron summary: sent=${totalSent}`,
+        status_code: 200,
+        error_msg: null,
+        resp_preview: safePreview({ mode: "cron", date: dateY, sent: totalSent }),
+      });
 
       return new Response(JSON.stringify({ ok: true, mode: "cron", sent: totalSent }), {
         headers: { ...corsHeaders, "content-type": "application/json" },
       });
     }
 
-    // ===== الوضع اليدوي: لو جالنا report_id نستخدمه مباشرة؛ غير كده نبعث لكل المستلمين المفعّلين
+    /* ========= MANUAL MODE ========= */
     let visits: VisitRow[] = [];
     if (bodyJson.report_id) {
       visits = await buildVisits(bodyJson.report_id);
+    } else if (bodyJson.filters) {
+      visits = await buildVisitsFromFilters(bodyJson.filters);
     } else {
-      // default manual: نبعث لنفس قائمة المستلمين المفعّلين (زي الكرون)
+      // fallback: أول report فعّال
       const { data: schedules, error: sErr } = await sb
         .from("scheduled_email_reports")
-        .select("id, recipient_email")
-        .eq("is_active", true);
+        .select("id")
+        .eq("is_active", true)
+        .limit(1);
       if (sErr) throw sErr;
-
-      // هنجمع HTML واحد لأول report_id (أو فاضي لو مفيش)
       const firstId = schedules?.[0]?.id as string | undefined;
       visits = firstId ? await buildVisits(firstId) : [];
     }
 
     const html = renderTable(visits, dateY);
 
-    // المستلمين في الوضع اليدوي
+    // المستلمون في الوضع اليدوي
     let recipients: string[] = [];
     if (Array.isArray(bodyJson.recipient_emails) && bodyJson.recipient_emails.length > 0) {
       recipients = Array.from(new Set(bodyJson.recipient_emails.map((e) => e.trim()).filter(Boolean)));
@@ -301,9 +423,7 @@ if (!(isCron || hasBearer || isScheduler)) {
         .eq("is_active", true);
       const { data: rec, error: rErr } = await rq.order("recipient_email", { ascending: true });
       if (rErr) throw rErr;
-      recipients = Array.from(
-        new Set((rec ?? []).map((r: { recipient_email: string }) => r.recipient_email).filter(Boolean))
-      );
+      recipients = Array.from(new Set((rec ?? []).map((r: { recipient_email: string }) => r.recipient_email).filter(Boolean)));
     }
 
     for (const to of recipients) {
@@ -311,15 +431,55 @@ if (!(isCron || hasBearer || isScheduler)) {
         const r = await sendEmail(to, html);
         console.log("Email OK (manual):", to, r.id);
         totalSent++;
+
+        // log success
+        await logEmail(sb, {
+          note: `manual send to ${to}`,
+          status_code: r.status,
+          error_msg: null,
+          resp_preview: safePreview({ id: r.id, recipient: to, sent: true }),
+        });
       } catch (err) {
-        console.log("Email FAIL (manual):", to, String(err));
+        const errMsg = (err as Error).message || String(err);
+        console.log("Email FAIL (manual):", to, errMsg);
+
+        // log failure
+        await logEmail(sb, {
+          note: `manual send failed to ${to}`,
+          status_code: 500,
+          error_msg: errMsg,
+          resp_preview: safePreview({ recipient: to, sent: false }),
+        });
       }
     }
+
+    // log summary
+    await logEmail(sb, {
+      note: `manual summary: sent=${totalSent}`,
+      status_code: 200,
+      error_msg: null,
+      resp_preview: safePreview({ mode: "manual", date: dateY, sent: totalSent }),
+    });
 
     return new Response(JSON.stringify({ ok: true, mode: "manual", sent: totalSent }), {
       headers: { ...corsHeaders, "content-type": "application/json" },
     });
   } catch (e) {
+    // لو حصل خطأ قبل ما ننشئ الـ client، هنحاول نسجّل رسالة الخطأ المختصرة
+    try {
+      if (PROJECT_URL && SERVICE_ROLE_KEY) {
+        const sbFallback = createClient(PROJECT_URL, SERVICE_ROLE_KEY);
+        await logEmail(sbFallback, {
+          note: "fatal error in handler",
+          status_code: 500,
+          error_msg: (e as Error).message,
+          resp_preview: safePreview({ ok: false, error: (e as Error).message }),
+        });
+      }
+    } catch{
+      // تجاهل أي فشل في التسجيل حتى لا نعطّل الاستجابة
+    }
+
     console.error(e);
     return new Response(
       JSON.stringify({ ok: false, error: (e as Error).message }),

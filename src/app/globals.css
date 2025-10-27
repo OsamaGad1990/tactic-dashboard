@@ -460,3 +460,123 @@ option {
 [dir="rtl"] .date-picker-container > div {
   justify-content: flex-end;
 }
+/* ===== Enable native date picker inside Filters Bar ===== */
+.filtersBar input[type="date"].native-date {
+  min-height: 36px;
+  width: 100%;
+  padding-inline-end: 28px; /* مساحة لأيقونة التقويم */
+  background: var(--input-bg) !important;
+  color: var(--input-text) !important;
+  border: 1px solid var(--input-border) !important;
+  border-radius: 8px;
+  text-align: center;
+  cursor: pointer;
+}
+.filtersBar input[type="date"].native-date::-webkit-inner-spin-button {
+  display: none;
+}
+.filtersBar input[type="date"].native-date::-webkit-clear-button {
+  display: none;
+}
+
+/* WebKit (Chrome/Edge/Safari) */
+.filtersBar input[type="date"].native-date::-webkit-calendar-picker-indicator {
+  display: block !important;
+  opacity: 1 !important;
+  -webkit-appearance: auto !important;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+
+/* Firefox */
+.filtersBar input[type="date"].native-date::-moz-calendar-picker-indicator {
+  display: block !important;
+  opacity: 1 !important;
+  cursor: pointer;
+}
+
+/* Theme-aware widgets */
+html[data-theme="dark"] .filtersBar input[type="date"].native-date { color-scheme: dark; }
+:root[data-theme="light"] .filtersBar input[type="date"].native-date { color-scheme: light; }
+/* وسّط واكتب التاريخ المختار بلون واضح */
+.filtersBar input[type="date"].native-date {
+  text-align: center;
+  color: var(--text) !important;
+  color-scheme: dark; /* أو light حسب الثيم عندك */
+}
+
+/* WebKit: لوّن أجزاء التاريخ الداخلية */
+.filtersBar input[type="date"].native-date::-webkit-datetime-edit,
+.filtersBar input[type="date"].native-date::-webkit-datetime-edit-text,
+.filtersBar input[type="date"].native-date::-webkit-datetime-edit-month-field,
+.filtersBar input[type="date"].native-date::-webkit-datetime-edit-day-field,
+.filtersBar input[type="date"].native-date::-webkit-datetime-edit-year-field {
+  color: var(--text) !important;
+  opacity: 1 !important;
+}
+
+/* Safari أحيانًا يحتاج ده */
+.filtersBar input[type="date"].native-date {
+  -webkit-text-fill-color: var(--text) !important;
+}
+
+/* وسّط الحقول داخليًا في WebKit */
+.filtersBar input[type="date"].native-date::-webkit-datetime-edit-fields-wrapper {
+  display: flex;
+  justify-content: center;
+}
+
+/* لو الحقل فاضي (كأنه placeholder) */
+.filtersBar input[type="date"].native-date::placeholder,
+.filtersBar input[type="date"].native-date[value=""]::-webkit-datetime-edit {
+  color: var(--muted) !important;
+  opacity: .7 !important;
+}
+/* ===== Filters bar: native date (clean) ===== */
+.filtersBar input[type="date"].native-date {
+  width: 100%;
+  min-height: 36px;
+  padding-inline: 12px;
+  border: 1px solid var(--input-border) !important;
+  border-radius: 8px;
+  background: var(--input-bg) !important;
+  color: var(--text) !important;
+  -webkit-text-fill-color: var(--text) !important; /* Safari */
+  text-align: center;            /* نعرض التاريخ في النص */
+  color-scheme: dark;            /* بدّل لـ light لو ثيمك فاتح افتراضي */
+  cursor: pointer;
+}
+
+/* إخفاء أيقونة التقويم فقط (مش النص) */
+.filtersBar input[type="date"].native-date::-webkit-calendar-picker-indicator {
+  display: none !important;
+  -webkit-appearance: none;
+  opacity: 0;
+}
+
+/* تلوين عناصر التاريخ الداخلية (WebKit) */
+.filtersBar input[type="date"].native-date::-webkit-datetime-edit,
+.filtersBar input[type="date"].native-date::-webkit-datetime-edit-text,
+.filtersBar input[type="date"].native-date::-webkit-datetime-edit-month-field,
+.filtersBar input[type="date"].native-date::-webkit-datetime-edit-day-field,
+.filtersBar input[type="date"].native-date::-webkit-datetime-edit-year-field {
+  color: var(--text) !important;
+  opacity: 1 !important;
+}
+
+/* وسْط الحقول داخليًا (WebKit) */
+.filtersBar input[type="date"].native-date::-webkit-datetime-edit-fields-wrapper {
+  display: flex;
+  justify-content: center;
+}
+
+/* Placeholder لما يكون فاضي */
+.filtersBar input[type="date"].native-date:placeholder-shown {
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted) !important;
+}
+
+/* Dark/Light حسب الثيم */
+html[data-theme="dark"] .filtersBar input[type="date"].native-date { color-scheme: dark; }
+:root[data-theme="light"] .filtersBar input[type="date"].native-date { color-scheme: light; }
