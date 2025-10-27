@@ -954,9 +954,9 @@ useEffect(() => {
           </Capsule>
 
           <Capsule label={ar ? "المدينة" : "City"} summary={selectedCity || (ar ? "الكل" : "All")}>
-            <SelectSingle
-  options={cityOptions}
-  value={selectedCity ?? ""}            // ← هنا
+            <SelectObject
+  options={citiesOptions}
+  value={selectedCity ?? ""}                   // بدّل `selectedCity ?? ""` بدل `selectedCity ?? ?? ""`
   placeholder={ar ? "كل المدن" : "All cities"}
   onChange={(v) => { 
     setSelectedCity(v || null); 
