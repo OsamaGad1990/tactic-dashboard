@@ -470,10 +470,10 @@ export default function InventoryReportPage() {
   // 🔒 تطبيق قيم الفلاتر المقفولة كافتراض
   useEffect(() => {
     if (!filtersLoading && userFilters) {
-      if (lockedRegion) setSelectedRegion(userFilters.default_region[0]);
-      if (lockedCity) setSelectedCity(userFilters.default_city[0]);
-      if (lockedStore) setSelectedStore(userFilters.allowed_markets[0]);
-      if (lockedTL) setSelectedTL(userFilters.Team_leader[0]);
+      if (lockedRegion) setSelectedRegion(userFilters.default_region?.[0] ?? null);
+if (lockedCity) setSelectedCity(userFilters.default_city?.[0] ?? null);
+if (lockedStore) setSelectedStore(userFilters.allowed_markets?.[0] ?? null);
+if (lockedTL) setSelectedTL(userFilters.Team_leader?.[0] ?? null);
     }
   }, [filtersLoading, userFilters, lockedRegion, lockedCity, lockedStore, lockedTL]);
 
