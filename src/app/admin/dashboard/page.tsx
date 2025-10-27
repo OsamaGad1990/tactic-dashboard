@@ -339,36 +339,38 @@ export default function AdminDashboardPage() {
 
   /* -------- user_settings -------- */
   useEffect(() => {
-    (async () => {
-      if (!user?.id) return;
-      const { data } = await supabase
-        .from<UserSettings>("user_settings")
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle();
+  (async () => {
+    if (!user?.id) return;
 
-      if (data) {
-        setUserSettings({
-          requests: data.requests,
-          default_region: data.default_region,
-          default_city: data.default_city,
-          allowed_markets: data.allowed_markets,
-          notificatins: data.notificatins,
-          Team_leader: data.Team_leader,
-        });
-        // قفل القيم الافتراضية مباشرة لو موجودة
-        setFilters((prev) => ({
-          ...prev,
-          region: data.default_region?.[0] ?? prev.region,
-          city: data.default_city?.[0] ?? prev.city,
-          store: data.allowed_markets?.[0] ?? prev.store,
-          team_leader_id: data.Team_leader?.[0] ?? prev.team_leader_id,
-        }));
-      } else {
-        setUserSettings(null);
-      }
-    })();
-  }, [user?.id]);
+    const { data } = await supabase
+      .from("user_settings")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const settings = (data ?? null) as UserSettings | null;
+
+    if (settings) {
+      setUserSettings({
+        requests: settings.requests,
+        default_region: settings.default_region,
+        default_city: settings.default_city,
+        allowed_markets: settings.allowed_markets,
+        notificatins: settings.notificatins,
+        Team_leader: settings.Team_leader,
+      });
+
+      setFilters(prev => ({
+        ...prev,
+        region: prev.region ?? (settings.default_region?.[0] ?? null),
+        city:   prev.city   ?? (settings.default_city?.[0]   ?? null),
+      }));
+    } else {
+      setUserSettings(null);
+    }
+  })();
+}, [user?.id]);
+
 
   /* -------- Load client's markets -------- */
   useEffect(() => {
