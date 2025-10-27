@@ -23,6 +23,7 @@ type AllVisitsCombinedRow = {
   id: UUID | null;                 // aliased: visit_id
   original_visit_id: UUID | null;  // aliased: visit_id
   tl_visit_id: UUID | null;
+  coordinator_visit_id?: UUID | null; // 👈 جديد (اختياري)
   user_id: UUID;
   market_id: UUID;
   client_id: UUID | null;
@@ -34,6 +35,7 @@ type AllVisitsCombinedRow = {
   end_reason_ar: string | null;
   end_visit_photo: string | null;
 };
+
 
 type UserRow = {
   id: UUID;
@@ -70,7 +72,6 @@ type SnapshotRow = {
   end_visit_photo: string | null;
 };
 
-type UserIdRow = { id: UUID };
 type UserSettingsRow = {
   default_region: string[] | null;
   default_city: string[] | null;
@@ -353,13 +354,13 @@ function DateField({
   locale = "en-GB",
 }: {
   label: string;
-  value: string;
+  value: string | null | undefined;      // 👈 وسّع النوع
   onChange: (v: string) => void;
   locale?: string;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const pretty = useMemo(() => {
+   const pretty = useMemo(() => {
     if (!value) return "—";
     const d = new Date(value + "T00:00:00");
     if (Number.isNaN(+d)) return value;
@@ -436,35 +437,39 @@ export default function Page() {
       const authId = authRes?.user?.id || null;
       if (!authId) return;
 
-      const { data: u } = await supabase
-        .from<UserIdRow>("Users")
-        .select("id")
-        .eq("auth_user_id", authId)
-        .maybeSingle();
+     type UserIdRow = { id: string };
+
+const { data: u } = await supabase
+  .from("Users")
+  .select("id")
+  .eq("auth_user_id", authId)
+  .returns<UserIdRow[]>()   // select بدون single = array
+  .maybeSingle();           // بعد maybeSingle => UserIdRow | null
+
 
       if (!u) return;
 
-      const { data: st } = await supabase
-        .from<UserSettingsRow>("user_settings")
-        .select("default_region, default_city, allowed_markets, Team_leader")
-        .eq("user_id", u.id)
-        .maybeSingle();
+     type UserSettingsPick = {
+  default_region: string[] | null;
+  default_city: string[] | null;
+  allowed_markets: string[] | null;
+  Team_leader: string[] | null;
+};
 
-      if (st) {
-        setUserSettings({
-          default_region: st.default_region,
-          default_city: st.default_city,
-          allowed_markets: st.allowed_markets,
-          Team_leader: st.Team_leader,
-        });
-        // ثبّت القيم المقفولة مباشرة
-        setFilters((prev) => ({
-          ...prev,
-          region: st.default_region?.[0] ?? prev.region,
-          city: st.default_city?.[0] ?? prev.city,
-          market: st.allowed_markets?.[0] ?? prev.market,
-        }));
-      }
+const { data: st } = await supabase
+  .from("user_settings")
+  .select("default_region, default_city, allowed_markets, Team_leader")
+  .eq("user_id", u.id)
+  .maybeSingle<UserSettingsPick>(); // ← صف واحد مtyped صح
+
+if (st) {
+  setUserSettings({
+    default_region: st.default_region,
+    default_city: st.default_city,
+    allowed_markets: st.allowed_markets,
+    Team_leader: st.Team_leader,
+  });
+}
     })();
   }, []);
 
@@ -767,23 +772,22 @@ export default function Page() {
 
       let query = supabase
         .from("all_visits_combined")
-        .select(
-          `
-          id:visit_id,
-          original_visit_id:visit_id,
-          tl_visit_id,
-          user_id,
-          market_id,
-          client_id,
-          snapshot_date,
-          status,
-          started_at,
-          finished_at,
-          end_reason_en,
-          end_reason_ar,
-          end_visit_photo
-        `
-        )
+        .select(`
+  id:visit_id,
+  original_visit_id:visit_id,
+  tl_visit_id,
+  coordinator_visit_id,        -- 👈 لو العمود موجود
+  user_id,
+  market_id,
+  client_id,
+  snapshot_date,
+  status,
+  started_at,
+  finished_at,
+  end_reason_en,
+  end_reason_ar,
+  end_visit_photo
+`)
         .eq("client_id", clientId)
         .in("user_id", selectedUsers)
         .in("market_id", selectedBranches)
@@ -803,10 +807,11 @@ export default function Page() {
       }
 
       const collected: SnapshotRow[] = (data ?? []).map((item) => ({
-        ...item,
-        id: (item.id ?? item.tl_visit_id) as UUID,
-        original_visit_id: (item.original_visit_id ?? item.id) as UUID,
-      }));
+  ...item,
+  id: (item.id ?? item.tl_visit_id) as UUID,
+  original_visit_id: (item.original_visit_id ?? item.id) as UUID,
+  coordinator_visit_id: (item.coordinator_visit_id ?? null) as UUID | null, // 👈 الإضافة المهمّة
+}));
 
       const incomplete = collected.filter((s) => s.status !== "finished" && s.status !== "ended").length;
       setIncompleteCount(incomplete);
@@ -977,11 +982,23 @@ export default function Page() {
       >
         <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(6, minmax(0, 1fr))" }}>
           <Capsule label={ar ? "من" : "From"}>
-            <DateField label="" value={gFilters.from} onChange={(v) => updateFilter("from", v)} locale={ar ? "ar-EG" : "en-GB"} />
-          </Capsule>
-          <Capsule label={ar ? "إلى" : "To"}>
-            <DateField label="" value={gFilters.to} onChange={(v) => updateFilter("to", v)} locale={ar ? "ar-EG" : "en-GB"} />
-          </Capsule>
+  <DateField
+    label=""
+    value={gFilters.from ?? ""}   // 👈 هنا
+    onChange={(v) => updateFilter("from", v)}
+    locale={ar ? "ar-EG" : "en-GB"}
+  />
+</Capsule>
+
+<Capsule label={ar ? "إلى" : "To"}>
+  <DateField
+    label=""
+    value={gFilters.to ?? ""}     // 👈 وهنا
+    onChange={(v) => updateFilter("to", v)}
+    locale={ar ? "ar-EG" : "en-GB"}
+  />
+</Capsule>
+
 
           <Capsule label={t.region} summary={filters.region || (ar ? "الكل" : "All")}>
             <SelectSingle
