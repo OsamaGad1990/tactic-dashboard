@@ -919,25 +919,18 @@ useEffect(() => {
             <DateBox selected={dateTo} onChange={(d) => setDateTo(d)} placeholder={ar ? "اختر تاريخ النهاية" : "Select end date"} />
           </Capsule>
 
-          <Capsule
-            label={ar ? "قائد الفريق" : "Team Leader"}
-            summary={
-              selectedTL === "ALL"
-                ? ar ? "كل الفريق" : "All team"
-                : tlOptions.find((t) => t.value === (selectedTL as string))?.label ?? "—"
-            }
-          >
-            <SelectObject
-               options={cityOptions}
-  value={selectedCity ?? ""}            // ← هنا
-  placeholder={ar ? "كل المدن" : "All cities"}
-  onChange={(v) => { 
-    setSelectedCity(v || null); 
-    setSelectedStore(null); 
-  }}
-  disabled={lockedCity}
-/>
-          </Capsule>
+          <Capsule label={ar ? "قائد الفريق" : "Team Leader"}
+  summary={selectedTL === "ALL"
+    ? (ar ? "كل الفريق" : "All team")
+    : tlOptions.find(t => t.value === (selectedTL as string))?.label ?? "—"}>
+  <SelectObject
+    options={tlOptions}
+    value={selectedTL ?? ""}
+    placeholder={ar ? "كل قادة الفرق" : "All TLs"}
+    onChange={(v) => setSelectedTL(v || null)}
+    disabled={lockedTL}
+  />
+</Capsule>
 
           <Capsule label={ar ? "المنطقة" : "Region"} summary={selectedRegion || (ar ? "الكل" : "All")}>
             <SelectSingle
@@ -953,18 +946,19 @@ useEffect(() => {
 />
           </Capsule>
 
-          <Capsule label={ar ? "المدينة" : "City"} summary={selectedCity || (ar ? "الكل" : "All")}>
-            <SelectObject
-  options={citiesOptions}
-  value={selectedCity ?? ""}                   // بدّل `selectedCity ?? ""` بدل `selectedCity ?? ?? ""`
-  placeholder={ar ? "كل المدن" : "All cities"}
-  onChange={(v) => { 
-    setSelectedCity(v || null); 
-    setSelectedStore(null); 
-  }}
-  disabled={lockedCity}
-/>
-          </Capsule>
+         <Capsule label={ar ? "المدينة" : "City"} summary={selectedCity || (ar ? "الكل" : "All")}>
+  <SelectObject
+    options={citiesOptions.map(c => ({ value: c, label: c }))} // ← هنا التحويل لـ Option[]
+    value={selectedCity ?? ""}
+    placeholder={ar ? "كل المدن" : "All cities"}
+    onChange={(v) => { 
+      setSelectedCity(v || null); 
+      setSelectedStore(null); 
+    }}
+    disabled={lockedCity}
+  />
+</Capsule>
+
 
           <Capsule label={ar ? "السوق" : "Store"} summary={selectedStore || (ar ? "الكل" : "All")}>
             <SelectSingle
