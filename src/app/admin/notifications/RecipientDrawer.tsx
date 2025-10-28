@@ -1,4 +1,5 @@
 "use client";
+import type React from "react"; // لازمة لـ React.CSSProperties
 import { createClient } from "@supabase/supabase-js";
 import { useEffect, useMemo, useState } from "react";
 import { useLangTheme } from "@/hooks/useLangTheme";
@@ -24,18 +25,20 @@ type NotiRow = {
   completed_by: string[] | null;
 
   created_at?: string | null;
-  completed_at?: string | null;
+  completed_at?: string | null; // إجمالي، لو محتاج وقت لكل مستخدم اعمل جدول ربط لاحقًا
 };
 
 type UserMini = {
   id: string;
   username: string | null;
-  name: string | null;          // ← جديد
+  name: string | null;
   arabic_name: string | null;
   role: string | null;
 };
 
 /* ========== Utils ========== */
+const normId = (v: unknown) => String(v ?? "").trim().toLowerCase();
+
 function fmtDateTime(v?: string | null): string {
   if (!v) return "—";
   try {
@@ -79,8 +82,9 @@ export default function RecipientDrawer({
   const [sender, setSender] = useState<UserMini | null>(null);
   const [recipients, setRecipients] = useState<UserMini[]>([]);
 
+  // Set موحّد IDs
   const completedSet = useMemo(
-    () => new Set((notification.completed_by ?? []).map(String)),
+    () => new Set((notification.completed_by ?? []).map(normId)),
     [notification.completed_by]
   );
 
@@ -172,11 +176,26 @@ export default function RecipientDrawer({
   const colTitle = useMemo(() => (isArabic ? "اسم المستخدم" : "Username"), [isArabic]);
 
   const name = (u?: UserMini | null) =>
-  !u
-    ? "-"
-    : isArabic
-    ? u.arabic_name || u.name || u.username || "-"
-    : u.name || u.username || u.arabic_name || "-";
+    !u
+      ? "-"
+      : isArabic
+      ? u.arabic_name || u.name || u.username || "-"
+      : u.name || u.username || u.arabic_name || "-";
+
+  // نجهّز صفوف العرض: نحتسب done ونرتّب المنفّذين أولاً
+  const rows = useMemo(() => {
+    const mapped = recipients.map((u) => ({
+      user: u,
+      done: completedSet.has(normId(u.id)),
+      sortName: String(u.username || u.arabic_name || u.id),
+    }));
+    // المنفّذون أولاً، ثم الاسم
+    mapped.sort((a, b) => {
+      if (a.done !== b.done) return a.done ? -1 : 1;
+      return a.sortName.localeCompare(b.sortName);
+    });
+    return mapped;
+  }, [recipients, completedSet]);
 
   if (!open) return null;
 
@@ -208,27 +227,24 @@ export default function RecipientDrawer({
               </tr>
             </thead>
             <tbody>
-              {recipients.length === 0 ? (
+              {rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={td}>—</td>
                 </tr>
               ) : (
-                recipients.map((u) => {
-                  const isCompleted = completedSet.has(String(u.id));
-                  return (
-                    <tr key={u.id}>
-                      <td style={td}>{name(u)}</td>
-                      <td style={td}>{roleLabel(u.role, isArabic)}</td>
-                      <td style={td}>{name(sender)}</td>
-                      <td style={td}>{roleLabel(sender?.role, isArabic)}</td>
-                      <td style={td}>{fmtDateTime(notification.created_at)}</td>
-                      <td style={td}>{isCompleted ? fmtDateTime(notification.completed_at) : "—"}</td>
-                      <td style={{ ...td, fontWeight: 800, textAlign: "center" }}>
-                        {isCompleted ? "✓" : "—"}
-                      </td>
-                    </tr>
-                  );
-                })
+                rows.map(({ user: u, done }) => (
+                  <tr key={u.id}>
+                    <td style={td}>{name(u)}</td>
+                    <td style={td}>{roleLabel(u.role, isArabic)}</td>
+                    <td style={td}>{name(sender)}</td>
+                    <td style={td}>{roleLabel(sender?.role, isArabic)}</td>
+                    <td style={td}>{fmtDateTime(notification.created_at)}</td>
+                    <td style={td}>{done ? fmtDateTime(notification.completed_at) : "—"}</td>
+                    <td style={{ ...td, fontWeight: 800, textAlign: "center" }}>
+                      {done ? "✓" : "—"}
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>

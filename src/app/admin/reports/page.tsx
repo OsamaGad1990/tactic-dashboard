@@ -9,6 +9,7 @@ import StepDataTable from "@/app/admin/visit-steps/StepDataTable";
 import { VISIT_STEPS, StepKey } from "@/utils/visitStepsMap";
 import SupaImg from "@/components/SupaImg";
 import { useAdminCascadingFilters } from "@/hooks/useAdminCascadingFilters";
+import type { PostgrestError } from "@supabase/supabase-js";
 
 /* ========= Supabase ========= */
 const supabase = createClient(
@@ -20,10 +21,8 @@ const supabase = createClient(
 type UUID = string;
 
 type AllVisitsCombinedRow = {
-  id: UUID | null;                 // aliased: visit_id
-  original_visit_id: UUID | null;  // aliased: visit_id
+  id: UUID | null;            // visit_id
   tl_visit_id: UUID | null;
-  coordinator_visit_id?: UUID | null; // 👈 جديد (اختياري)
   user_id: UUID;
   market_id: UUID;
   client_id: UUID | null;
@@ -425,6 +424,7 @@ function DateField({
 export default function Page() {
   const { isArabic: ar } = useLangTheme();
   const [loading, setLoading] = useState(false);
+  const snapKey = (s: SnapshotRow) => `${s.id}__${s.snapshot_date}`;
 
   /* ===== user_settings masks ===== */
   const [userSettings, setUserSettings] = useState<
@@ -537,7 +537,7 @@ if (st) {
   const [selectedChains, setSelectedChains] = useState<string[]>([]);
   const [selectedBranches, setSelectedBranches] = useState<UUID[]>([]);
   const [snapshots, setSnapshots] = useState<SnapshotRow[]>([]);
-  const [selectedSnapshotIds, setSelectedSnapshotIds] = useState<UUID[]>([]);
+  const [selectedSnapshotIds, setSelectedSnapshotIds] = useState<string[]>([]);
   const [incompleteCount, setIncompleteCount] = useState(0);
 
   const FIRST_STEP: StepKey = useMemo(() => Object.keys(VISIT_STEPS)[0] as StepKey, []);
@@ -759,76 +759,87 @@ if (st) {
     setIncompleteCount(0);
   }, [filters.region, filters.city, filters.market, filteredMarkets]);
 
-  /* ====== Snapshots via all_visits_combined ====== */
-  useEffect(() => {
-    setSnapshots([]);
-    setSelectedSnapshotIds([]);
-    setIncompleteCount(0);
+/* ====== Snapshots via all_visits_combined ====== */
+useEffect(() => {
+  setSnapshots([]);
+  setSelectedSnapshotIds([]);
+  setIncompleteCount(0);
 
-    if (!clientId || selectedUsers.length === 0 || selectedBranches.length === 0) return;
+  if (!clientId || selectedUsers.length === 0 || selectedBranches.length === 0) return;
 
-    (async () => {
-      setLoading(true);
+  (async () => {
+    setLoading(true);
 
+    const selectCols = `
+      id:visit_id,
+      tl_visit_id,
+      user_id,
+      market_id,
+      client_id,
+      snapshot_date,
+      status,
+      started_at,
+      finished_at,
+      end_reason_en,
+      end_reason_ar,
+      end_visit_photo
+    `;
+
+    try {
       let query = supabase
         .from("all_visits_combined")
-        .select(`
-  id:visit_id,
-  original_visit_id:visit_id,
-  tl_visit_id,
-  coordinator_visit_id,        -- 👈 لو العمود موجود
-  user_id,
-  market_id,
-  client_id,
-  snapshot_date,
-  status,
-  started_at,
-  finished_at,
-  end_reason_en,
-  end_reason_ar,
-  end_visit_photo
-`)
+        .select(selectCols)
         .eq("client_id", clientId)
         .in("user_id", selectedUsers)
         .in("market_id", selectedBranches)
         .not("status", "is", null);
 
       if (gFilters.from) query = query.gte("snapshot_date", gFilters.from);
-      if (gFilters.to) query = query.lte("snapshot_date", gFilters.to);
+      if (gFilters.to)   query = query.lte("snapshot_date", gFilters.to);
 
-      const { data, error } = await query
-        .returns<AllVisitsCombinedRow[]>()   // Typed
+      const { data } = await query
+        .returns<AllVisitsCombinedRow[]>()      // ← كده استخدمنا النوع
         .order("started_at", { ascending: false });
 
-      if (error) {
-        console.error("Error fetching from all_visits_combined:", error);
-        setLoading(false);
-        return;
-      }
+      const rows = data ?? [];
 
-      const collected: SnapshotRow[] = (data ?? []).map((item) => ({
-  ...item,
-  id: (item.id ?? item.tl_visit_id) as UUID,
-  original_visit_id: (item.original_visit_id ?? item.id) as UUID,
-  coordinator_visit_id: (item.coordinator_visit_id ?? null) as UUID | null, // 👈 الإضافة المهمّة
-}));
+      const collected: SnapshotRow[] = rows.map((item) => ({
+        ...item,
+        original_visit_id: (item.id ?? item.tl_visit_id) as UUID | null,
+        coordinator_visit_id: null,             // لو أضفت العمود لاحقًا عبّيه هنا
+        id: (item.id ?? item.tl_visit_id) as UUID,
+      }));
 
-      const incomplete = collected.filter((s) => s.status !== "finished" && s.status !== "ended").length;
+      const incomplete = collected.filter(
+        (s) => s.status !== "finished" && s.status !== "ended"
+      ).length;
+
       setIncompleteCount(incomplete);
-
       setSnapshots(collected);
+    } catch (e) {
+      const err = e as PostgrestError;
+      console.error("Error fetching from all_visits_combined:", {
+        message: err.message,
+        details: err.details,
+        hint: err.hint,
+        code: err.code,
+      });
+    } finally {
       setLoading(false);
-    })();
-  }, [clientId, gFilters.from, gFilters.to, selectedUsers, selectedBranches]);
+    }
+  })();
+}, [clientId, gFilters.from, gFilters.to, selectedUsers, selectedBranches]);
+
+
 
   /* ====== visit steps availability ====== */
   const { activeVisitId, activeDate } = useMemo(() => {
-    if (selectedSnapshotIds.length === 0) return { activeVisitId: null, activeDate: null };
-    const sid = selectedSnapshotIds[0];
-    const s = snapshots.find((x) => x.id === sid);
-    if (!s) return { activeVisitId: null, activeDate: null };
-    return { activeVisitId: s.original_visit_id || s.tl_visit_id || null, activeDate: s.snapshot_date };
-  }, [selectedSnapshotIds, snapshots]);
+  if (selectedSnapshotIds.length === 0) return { activeVisitId: null, activeDate: null };
+  const selKey = selectedSnapshotIds[0];
+  const s = snapshots.find((x) => snapKey(x) === selKey);
+  if (!s) return { activeVisitId: null, activeDate: null };
+  return { activeVisitId: s.original_visit_id || s.tl_visit_id || null, activeDate: s.snapshot_date };
+}, [selectedSnapshotIds, snapshots]);
 
   useEffect(() => {
     if (!activeVisitId) {
@@ -864,20 +875,27 @@ if (st) {
 
   /* ====== counts + visible list ====== */
   const { completedCount, pendingCount, visibleSnapshots } = useMemo(() => {
-    const completed = snapshots.filter((s) => s.status === "finished");
-    const ended = snapshots.filter((s) => s.status === "ended");
-    const visible = [...completed, ...ended].sort(
-      (a, b) =>
-        (b.started_at ? +new Date(b.started_at) : 0) - (a.started_at ? +new Date(a.started_at) : 0)
-    );
-    const uniqueVisible = Array.from(new Map(visible.map((item) => [item.id, item])).values());
-    const pending = Math.max(0, incompleteCount - ended.length);
-    return {
-      completedCount: completed.length,
-      pendingCount: pending,
-      visibleSnapshots: uniqueVisible,
-    };
-  }, [snapshots, incompleteCount]);
+  const completed = snapshots.filter((s) => s.status === "finished");
+  const ended = snapshots.filter((s) => s.status === "ended");
+  const visible = [...completed, ...ended].sort(
+    (a, b) =>
+      (b.started_at ? +new Date(b.started_at) : 0) -
+      (a.started_at ? +new Date(a.started_at) : 0)
+  );
+
+  // ❌ كان: uniqueVisible = remove duplicates by id
+  // ✅ اعرض الكل
+  const uniqueVisible = visible;
+
+  const pending = Math.max(0, incompleteCount - ended.length);
+
+  return {
+    completedCount: completed.length,
+    pendingCount: pending,
+    visibleSnapshots: uniqueVisible,
+  };
+}, [snapshots, incompleteCount]);
+
 
   /* ========= i18n ========= */
   const t = useMemo(
@@ -1170,92 +1188,98 @@ if (st) {
           </Panel>
 
           {/* Dates */}
-          <Panel
-            title={`${t.dates} — ${t.completed}: ${completedCount} | ${t.pending}: ${pendingCount}`}
-            right={<PillCount n={visibleSnapshots.length} />}
-          >
-            {selectedUsers.length === 0 ? (
-              <EmptyBox text={t.pickUser} />
-            ) : selectedBranches.length === 0 ? (
-              <EmptyBox text={t.pickChain} />
-            ) : visibleSnapshots.length === 0 ? (
-              <EmptyBox text={t.noDates} />
-            ) : (
-              <>
-                <div style={{ marginBottom: 8, fontSize: 12, opacity: 0.8 }}>{t.pickDate}</div>
-                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
-                  {visibleSnapshots.map((s) => {
-                    const sel = selectedSnapshotIds.includes(s.id);
-                    const visitTimestamp = s.started_at || s.finished_at;
-                    const started = visitTimestamp
-                      ? new Date(visitTimestamp).toLocaleString(ar ? "ar-EG" : "en-GB", { timeZone: "Asia/Riyadh" })
-                      : "—";
+         <Panel
+  title={`${t.dates} — ${t.completed}: ${completedCount} | ${t.pending}: ${pendingCount}`}
+  right={<PillCount n={visibleSnapshots.length} />}
+>
+  {selectedUsers.length === 0 ? (
+    <EmptyBox text={t.pickUser} />
+  ) : selectedBranches.length === 0 ? (
+    <EmptyBox text={t.pickChain} />
+  ) : visibleSnapshots.length === 0 ? (
+    <EmptyBox text={t.noDates} />
+  ) : (
+    <>
+      <div style={{ marginBottom: 8, fontSize: 12, opacity: 0.8 }}>{t.pickDate}</div>
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+        {visibleSnapshots.map((s) => {
+          const key = snapKey(s);
+          const sel = selectedSnapshotIds.includes(key);
 
-                    if (s.status === "finished") {
-                      return (
-                        <button key={s.id} type="button" onClick={() => setSelectedSnapshotIds([s.id])} style={btn(56, sel)}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 4, textAlign: ar ? "right" : "left" }}>
-                            <strong>{started}</strong>
-                            <span style={{ opacity: 0.75, fontSize: 12 }}>{ar ? "مكتملة" : "Finished"}</span>
-                          </div>
-                          <span style={{ opacity: 0.6 }}>{sel ? "✓" : "＋"}</span>
-                        </button>
-                      );
-                    }
+          const visitTimestamp = s.started_at || s.finished_at;
+          const started = visitTimestamp
+            ? new Date(visitTimestamp).toLocaleString(ar ? "ar-EG" : "en-GB", { timeZone: "Asia/Riyadh" })
+            : "—";
 
-                    if (s.status === "ended") {
-                      return (
-                        <div
-                          key={s.id}
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 8,
-                            width: "100%",
-                            padding: "10px 12px",
-                            borderRadius: 12,
-                            border: "1px solid var(--input-border)",
-                            background: "var(--input-bg)",
-                            textAlign: ar ? "right" : "left",
-                          }}
-                        >
-                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                            <strong>{started}</strong>
-                            <span style={{ opacity: 0.85, fontSize: 12, color: "#f87171", fontWeight: "bold" }}>
-                              {t.ended}
-                            </span>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              let photoUrl = s.end_visit_photo || "";
-                              try {
-                                const photos = JSON.parse(photoUrl);
-                                if (Array.isArray(photos) && photos.length > 0) photoUrl = photos[0];
-                              } catch {
-                                // ignore
-                              }
-                              setEndReasonViewer({
-                                open: true,
-                                reasonEn: s.end_reason_en || "",
-                                reasonAr: s.end_reason_ar || "",
-                                photo: photoUrl,
-                              });
-                            }}
-                            style={{ ...btnSm(false), width: "100%" }}
-                          >
-                            {t.showEndReason}
-                          </button>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })}
+          if (s.status === "finished") {
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSelectedSnapshotIds([key])}
+                style={btn(56, sel)}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, textAlign: ar ? "right" : "left" }}>
+                  <strong>{started}</strong>
+                  <span style={{ opacity: 0.75, fontSize: 12 }}>{ar ? "مكتملة" : "Finished"}</span>
                 </div>
-              </>
-            )}
-          </Panel>
+                <span style={{ opacity: 0.6 }}>{sel ? "✓" : "＋"}</span>
+              </button>
+            );
+          }
+
+          if (s.status === "ended") {
+            return (
+              <div
+                key={key}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid var(--input-border)",
+                  background: "var(--input-bg)",
+                  textAlign: ar ? "right" : "left",
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <strong>{started}</strong>
+                  <span style={{ opacity: 0.85, fontSize: 12, color: "#f87171", fontWeight: "bold" }}>
+                    {t.ended}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    let photoUrl = s.end_visit_photo || "";
+                    try {
+                      const photos = JSON.parse(photoUrl);
+                      if (Array.isArray(photos) && photos.length > 0) photoUrl = photos[0];
+                    } catch { /* ignore */ }
+                    setEndReasonViewer({
+                      open: true,
+                      reasonEn: s.end_reason_en || "",
+                      reasonAr: s.end_reason_ar || "",
+                      photo: photoUrl,
+                    });
+                  }}
+                  style={{ ...btnSm(false), width: "100%" }}
+                >
+                  {t.showEndReason}
+                </button>
+              </div>
+            );
+          }
+
+          return null;
+        })}
+      </div>
+    </>
+  )}
+</Panel>
 
           {/* Steps */}
           <Panel title={t.steps}>
