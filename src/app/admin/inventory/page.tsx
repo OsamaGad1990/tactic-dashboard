@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { supabase } from "@/utils/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 import { useLangTheme } from "@/hooks/useLangTheme";
 import { useUserFilters } from "@/hooks/useUserFilters";
 import SupaImg from "@/components/SupaImg";

@@ -3,12 +3,7 @@
 
 import Image, { type ImageProps } from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-);
+import { supabase } from "@/lib/supabaseClient";
 
 /* ===== utils ===== */
 const isAbs = (u: string) => /^(https?:|data:|blob:)/i.test(u);
@@ -23,6 +18,7 @@ function extractBucketKey(u: string): { bucket: string; key: string } | null {
     const tail = url.pathname.slice(i + "/storage/v1/object/".length);
     const parts = tail.split("/").filter(Boolean);
     if (parts.length < 3) return null;
+    // parts[0] = public|sign|auth
     const bucket = parts[1];
     const key = parts.slice(2).join("/");
     if (!bucket || !key) return null;
@@ -52,7 +48,7 @@ function parseLoosePath(
   return null;
 }
 
-/** ===== props ===== */
+/* ===== props ===== */
 type Props = Omit<ImageProps, "src"> & {
   src: string;
   bucketHint?: string;
@@ -72,18 +68,16 @@ export default function SupaImg({
 }: Props) {
   const [signed, setSigned] = useState<string>("");
 
-  const needSign = useMemo(() => {
-    if (!src) return false;
-    if (isAbs(src)) {
-      // مطلق لكنه يشير لمسار supabase storage → قد يحتاج توقيع
-      return !!extractBucketKey(src);
-    }
-    // أي مسار غير مطلق → نحتاج توقيع
-    return true;
-  }, [src]);
+ // نوقّع أي شيء يشير لـ Supabase Storage سواء كان عام أو خاص
+const needSign = useMemo(() => {
+  if (!src) return false;
+  const bk = extractBucketKey(src) || parseLoosePath(src, bucketHint);
+  return !!bk;
+}, [src, bucketHint]);
 
   useEffect(() => {
     let alive = true;
+
     async function run() {
       if (!needSign) {
         setSigned("");
@@ -115,6 +109,7 @@ export default function SupaImg({
 
       setSigned(data.signedUrl);
     }
+
     run();
     return () => {
       alive = false;
@@ -124,7 +119,7 @@ export default function SupaImg({
   // نفكك width/height/sizes من ImageProps عشان نستخدمهم بدون any
   const { width, height, sizes, ...restProps } = imgProps;
 
-  // placeholder لحد ما نجيب signedUrl
+  // placeholder لحد ما نجيب signedUrl لما نحتاج توقيع
   if (needSign && !signed) {
     const wCss =
       typeof width === "number"
@@ -150,6 +145,7 @@ export default function SupaImg({
   }
 
   const imgSrc = needSign ? signed : src;
+  const isAbsolute = isAbs(imgSrc);
   const mergedStyle: React.CSSProperties = {
     width: "100%",
     height: "100%",
@@ -159,6 +155,19 @@ export default function SupaImg({
 
   // لو عندك width/height → نستخدمهما
   if (typeof width === "number" && typeof height === "number") {
+    if (isAbsolute) {
+      // روابط خارجية: استخدم <img> (نتجنب Optimization)
+      return (
+        <img
+          src={imgSrc}
+          alt={alt}
+          width={width}
+          height={height}
+          style={mergedStyle}
+
+        />
+      );
+    }
     return (
       <Image
         src={imgSrc}
@@ -166,12 +175,31 @@ export default function SupaImg({
         width={width}
         height={height}
         style={mergedStyle}
+        unoptimized
         {...restProps}
       />
     );
   }
 
-  // غير كده → نستخدم fill
+  // غير كده → fill
+  if (isAbsolute) {
+    // fill مع <img> يدويًا
+    return (
+      <img
+        src={imgSrc}
+        alt={alt}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit,
+          ...(style as React.CSSProperties),
+        }}
+      />
+    );
+  }
+
   return (
     <Image
       src={imgSrc}
@@ -179,6 +207,7 @@ export default function SupaImg({
       fill
       sizes={sizes ?? "100vw"}
       style={mergedStyle}
+      unoptimized
       {...restProps}
     />
   );

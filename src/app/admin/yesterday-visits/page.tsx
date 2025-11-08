@@ -3,18 +3,14 @@
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabaseClient";
 import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
 import "react-circular-progressbar/dist/styles.css";
 import { useLangTheme } from "@/hooks/useLangTheme";
 import { useUserFilters } from "@/hooks/useUserFilters";
 import SupaImg from "@/components/SupaImg";
 
-/* ========= Supabase ===== */
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-);
+
 
 /* ========= Types ========= */
 type UUID = string;
@@ -44,7 +40,7 @@ type SnapshotRow = {
   end_reason_ar: string | null;
   end_reason_en: string | null;
   end_visit_photo: string | null;
-  jp_state?: "IN JP" | "OUT OF JP" | null;
+  jp_state?: string | null;
   user?: UserLite | null;
   team_leader?: UserLite | null;
   market?: Market | null;
@@ -454,18 +450,54 @@ export default function YesterdayVisitsPage() {
     (async () => {
       const { data } = await supabase.auth.getSession();
       if (!data?.session) { router.replace("/login"); return; }
+      
+      const authUserId = data.session.user.id; // 1. هذا هو Auth ID
+
       let cid = localStorage.getItem("client_id");
+      
       if (!cid) {
-        const { data: cu } = await supabase
+        // [!!!] --- بداية الإصلاح ---
+        // 2. نحتاج للـ ID من جدول public.Users أولاً
+        const { data: publicUser, error: userError } = await supabase
+          .from("Users")
+          .select("id")
+          .eq("auth_user_id", authUserId) // (البحث بعمود الربط الصحيح)
+          .single();
+
+        if (userError || !publicUser) {
+          console.error("YesterdayVisits: Could not find public user for auth user:", authUserId, userError);
+          router.replace("/no-access"); // (غير مسموح له)
+          return;
+        }
+
+        const publicUserId = publicUser.id; // 3. هذا هو الـ ID الصحيح لجدول Users
+
+        // 4. الآن نبحث في client_users باستخدام الـ ID الصحيح
+        const { data: cu, error: clientUserError } = await supabase
           .from("client_users")
           .select("client_id")
-          .eq("user_id", data.session.user.id)
+          .eq("user_id", publicUserId) // (استخدام publicUserId)
           .eq("is_active", true)
           .single();
-        if (cu?.client_id) { cid = String(cu.client_id); localStorage.setItem("client_id", cid); }
+
+        // هذا هو المكان الذي كان يظهر فيه خطأ 406
+        if (clientUserError) {
+          console.error("YesterdayVisits: Could not find client_user link:", publicUserId, clientUserError);
+          router.replace("/no-access"); 
+          return;
+        }
+        // [!!!] --- نهاية الإصلاح ---
+          
+        if (cu?.client_id) { 
+          cid = String(cu.client_id); 
+          localStorage.setItem("client_id", cid); 
+        }
       }
-      if (!cid) { router.replace("/no-access"); return; }
-      setClientId(cid); setBooting(false);
+
+      if (!cid) { router.replace("/no-access"); return; } 
+      
+      setClientId(cid); 
+      setBooting(false);
     })();
   }, [router]);
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabaseClient";
 
 type ClientRow = {
   client_code: string;
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Supabase env vars missing" }, { status: 500 });
     }
 
-    const supabase = createClient(url, key);
+   
 
     let query = supabase
       .from("clients")

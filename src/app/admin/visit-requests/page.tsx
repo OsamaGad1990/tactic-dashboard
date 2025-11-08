@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabaseClient";
 import { useLangTheme } from "@/hooks/useLangTheme";
 
 // ======================= تعديل: إضافة مكتبة التاريخ وتنسيقاتها =======================
@@ -10,11 +10,6 @@ import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 // =========================================================================
 
-/* ========= Supabase ========= */
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-);
 
 /* ========= Types ========= */
 type Role = "admin" | "super_admin" | string;

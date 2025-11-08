@@ -1,564 +1,1410 @@
 // src/app/admin/visit-steps/StepDataTable.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-import { VISIT_STEPS, StepKey, StepConfig, StepColumn } from "@/utils/visitStepsMap";
+import React, { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { useLangTheme } from "@/hooks/useLangTheme";
 import SupaImg from "@/components/SupaImg";
+import { VISIT_STEPS, type StepKey, type StepConfig } from "@/utils/visitStepsMap";
 import BadgePill from "@/components/BadgePill";
 
-/* ===== Supabase ===== */
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-);
+/* ========= Types ========= */
+type UUID = string;
+type ImgRef = { url: string; bucket?: string };
 
-/* ===== Types ===== */
-type Row = Record<string, unknown>;
-type CellType = "text" | "number" | "datetime" | "image" | "boolean" | "pill";
+type UserRow = {
+  id: UUID;
+  auth_user_id?: UUID | null;
+  name: string | null;
+  username: string | null;
+  arabic_name: string | null;
+  role: string | null;
+  team_leader_id: UUID | null;
+};
 
 type Props = {
   step: StepKey;
-  pageSize?: number;
-  visitId?: string | null;
+  visitIds?: string[];
   startDate?: string | null;
   endDate?: string | null;
-}
+  userId?: UUID | null;
+  pageSize?: number;
+  users?: UserRow[];
+  jpState?: string | null;
+};
 
-/* ===== ثوابت خاصة بحقل حالة JP + جدول الزيارات ===== */
-const JP_FIELDS = ["jp_state"] as const;
-const VISITS_TABLE = "DailyVisitSnapshots";
+type Row = Record<string, unknown>;
+type MarketInfoRow = { store: string | null; branch: string | null };
 
-/* ===== helpers: قراءة آمنة بدون any ===== */
-function getStr(obj: Record<string, unknown> | undefined, key: string): string {
-  const v = obj?.[key];
-  if (typeof v === "string") return v;
-  if (v == null) return "";
-  return String(v);
-}
-function getId(obj: Record<string, unknown> | undefined): string {
-  const v = obj?.["id"];
-  if (typeof v === "string") return v;
-  if (v == null) return "";
-  return String(v);
-}
-
-/* ===== helpers: صور ===== */
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const PUBLIC_BASE = `${SUPABASE_URL}/storage/v1/object/public`;
-const isAbsUrl = (u: string) => /^(https?:|data:|blob:)/i.test(u);
-function getVisitId(row: Row): string {
-  const v = (row as Record<string, unknown>)["visit_id"] as unknown;
-  if (typeof v === "string") return v;
-  if (v == null) return "";
-  return String(v);
-}
-
-function toPublicUrl(u?: string | null, bucketHint?: string): string {
-  if (!u) return "";
-  const s = String(u).trim();
-  if (!s) return "";
-  if (isAbsUrl(s)) return s;
-  if (s.startsWith("/storage/v1/object/public/")) return `${SUPABASE_URL}${s}`;
-  if (s.includes("/")) return `${PUBLIC_BASE}/${s}`;
-  if (bucketHint) return `${PUBLIC_BASE}/${bucketHint}/${s}`;
-  return `${PUBLIC_BASE}/${s}`;
-}
-function normalizeImageList(v: unknown, bucketHint?: string): string[] {
-  if (Array.isArray(v)) {
-    return v.map((x) => toPublicUrl(String(x), bucketHint)).filter(Boolean);
-  }
-  if (typeof v === "string") {
-    const parts = v.split(/[\s,]+/).filter(Boolean);
-    return parts.map((x) => toPublicUrl(x, bucketHint)).filter(Boolean);
-  }
-  if (v == null) return [];
-  return [toPublicUrl(String(v), bucketHint)].filter(Boolean);
-}
-
-function printableError(e: unknown): Record<string, unknown> {
-  if (e instanceof Error) {
-    const out: Record<string, unknown> = { name: e.name, message: e.message };
-    if (e.stack) out.stack = e.stack;
-    return out;
-  }
-  if (typeof e === "object" && e !== null) {
-    const obj = e as Record<string, unknown>;
-    const keys = ["name", "message", "code", "details", "hint", "status", "stack"];
-    const out: Record<string, unknown> = {};
-    for (const k of keys) {
-      if (k in obj) out[k] = obj[k];
-    }
-    return Object.keys(out).length ? out : obj;
-  }
-  return { message: String(e) };
-}
-function isObjRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-/* ===== اختيار عمود التاريخ لكل خطوة ===== */
+/* ========= Helpers ========= */
 const dateColumnFor = (stepKey: StepKey) => {
   switch (stepKey) {
-    case "arrival_photos":       return "arrival_time";
-    case "remarks":              return "submit_at";   // هيبقى له OR مع created_at لو submit_at NULL
-    // باقي الخطوات:
-    case "availability":
-    case "whcount":
-    case "damage_reports":
-    case "sos_reports":
-    case "competitor_activity":
+    case "arrival_photos":
+      return "arrival_time";
+    case "remarks":
     case "promoter_reports":
     case "promoter_plus_reports":
-    case "tl_details":
     default:
       return "created_at";
   }
 };
 
-/* ===== تحويل يوم إلى نطاق توقيت الرياض [بداية اليوم .. بداية اليوم التالي) ===== */
 const toKsaDayRange = (day: string) => {
-  // day = "YYYY-MM-DD" أو ISO فيه T
   const ymd = day.split("T")[0];
-  const base = `${ymd}T00:00:00+03:00`;
-
-  const d = new Date(`${ymd}T00:00:00+03:00`);
+  const fromISO = `${ymd}T00:00:00+03:00`;
+  const [Y, M, D] = ymd.split("-").map(Number);
+  const d = new Date(Y, (M ?? 1) - 1, D ?? 1);
   d.setDate(d.getDate() + 1);
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  const next = `${yyyy}-${mm}-${dd}T00:00:00+03:00`;
-
-  return { fromISO: base, toISO: next };
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const toISO = `${yyyy}-${mm}-${dd}T00:00:00+03:00`;
+  return { fromISO, toISO };
 };
+function formatPromoNote(raw: unknown, ar: boolean): string {
+  const s = String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 
+  if (["instore", "in store", "in-store", "inside store", "عرض داخلي"].includes(s)) {
+    return ar ? "عرض داخلي" : "In-store";
+  }
+  if (["flyer", "brochure", "leaflet", "بروشور"].includes(s)) {
+    return ar ? "بروشور" : "Flyer";
+  }
+  if (["extra visibility", "extra-visibility", "extra display", "extra space", "مساحة اضافية", "مساحة إضافية"].includes(s)) {
+    return ar ? "مساحة إضافية" : "Extra visibility";
+  }
+  // fallback لو جاء نص حر
+  return String(raw || "");
+}
 
-/* ===== component ===== */
-export default function StepDataTable({
-  step,
-  pageSize = 25,
-  visitId = null,
-  startDate = null,
-  endDate = null,
-}: Props) {
-  const { isArabic } = useLangTheme();
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(0);
-  const [errMsg, setErrMsg] = useState<string | null>(null);
-
-  // Lightbox
-  const [viewer, setViewer] = useState<{ open: boolean; imgs: string[]; index: number; title?: string }>(
-    { open: false, imgs: [], index: 0, title: "" }
-  );
-  const openViewer = (imgs: string[], title?: string, index = 0) => setViewer({ open: true, imgs, index, title });
-  const closeViewer = () => setViewer((v) => ({ ...v, open: false }));
-  const prevImg = () => setViewer((v) => ({ ...v, index: (v.index - 1 + v.imgs.length) % v.imgs.length }));
-  const nextImg = () => setViewer((v) => ({ ...v, index: (v.index + 1) % v.imgs.length }));
-
-  useEffect(() => {
-    if (!viewer.open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeViewer();
-      if (e.key === "ArrowLeft") prevImg();
-      if (e.key === "ArrowRight") nextImg();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [viewer.open]);
-
-  // config
-  const cfg: StepConfig = useMemo(() => VISIT_STEPS[step], [step]);
-  const visibleCols = useMemo(
-    () => cfg.columns.filter((c) => !(c.key === "visit_id" && visitId)),
-    [cfg.columns, visitId]
-  );
-
-  // lookup cache (مثل user_id → اسم)
-  const [lookups, setLookups] = useState<Record<string, Record<string, string>>>({});
-
-  // حالة IN/OUT JP لكل زيارة
-  const [visitStatusMap, setVisitStatusMap] = useState<Record<string, string>>({});
-
-  // جلب الصفحة
-  const fetchPage = useCallback(async () => {
-    setLoading(true);
-    setErrMsg(null);
-
-    try {
-      const from = page * pageSize;
-      const to = from + pageSize - 1;
-      if (from < 0 || to < from) {
-        throw new Error(`Invalid pagination: from=${from}, to=${to}, pageSize=${pageSize}`);
-      }
-
-      let q = supabase.from(cfg.table).select(cfg.select, { count: "exact" }).range(from, to);
-
-      // ⬅️ لازم دايمًا نطبّق visit_id لو متاح
-      if (visitId) {
-        q = q.eq("visit_id", visitId);
-      }
-
-      // ⬅️ وبنطبّق التاريخ كمان (على عمود الخطوة الصحيح)
-      const dateCol = dateColumnFor(step);
-      const day = startDate || endDate; // UI بيبعت نفس اليوم في الاتنين
-      if (day) {
-        const { fromISO, toISO } = toKsaDayRange(day);
-
-        if (step === "remarks" && dateCol === "submit_at") {
-          // (submit_at within range) OR (submit_at is NULL AND created_at within range)
-          // والباقي (visit_id وغيره) AND مع الشرط ده
-          q = q.or(
-            `and(${dateCol}.gte.${fromISO},${dateCol}.lt.${toISO}),and(${dateCol}.is.null,created_at.gte.${fromISO},created_at.lt.${toISO})`
-          );
-        } else {
-          q = q.gte(dateCol, fromISO).lt(dateCol, toISO);
-        }
-      }
-
-      if (cfg.defaultOrder) {
-        q = q.order(cfg.defaultOrder.column, { ascending: cfg.defaultOrder.ascending });
-      }
-
-      const res = await q;
-      if (res.error) {
-        const err = res.error;
-        let message = err.message || "Query failed";
-        if (err.code) message += ` [code=${err.code}]`;
-        if (err.details) message += ` | details: ${err.details}`;
-        const errMaybe = err as unknown as { hint?: unknown };
-        if (errMaybe.hint) message += ` | hint: ${String(errMaybe.hint)}`;
-        throw new Error(message);
-      }
-
-      const raw = res.data as unknown;
-      const arr: Row[] = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
-      setRows(arr);
-
-      /* ===== احقن حالة IN/OUT JP من جدول الزيارات ===== */
-      try {
-        const hasInlineJP = new RegExp(`(^|,)\\s*(${JP_FIELDS.join("|")})\\s*(,|$)`, "i").test(cfg.select);
-
-        if (!hasInlineJP) {
-          const visitIds = Array.from(new Set(arr.map((r) => getVisitId(r)).filter(Boolean)));
-
-          if (visitIds.length) {
-            const { data: vData, error: vErr } = await supabase
-              .from(VISITS_TABLE)
-              .select(`original_visit_id, tl_visit_id, ${JP_FIELDS.join(", ")}`)
-              .or(`original_visit_id.in.(${visitIds.join(",")}),tl_visit_id.in.(${visitIds.join(",")})`);
-
-            if (!vErr && Array.isArray(vData)) {
-              const map: Record<string, string> = {};
-              for (const v of vData) {
-                if (!isObjRecord(v)) continue;
-                const rec = v as Record<string, unknown>;
-                const key = getStr(rec, "original_visit_id") || getStr(rec, "tl_visit_id");
-                const val = getStr(rec, "jp_state");
-                if (key && val) map[key] = val.trim();
-              }
-              setVisitStatusMap(map);
-            } else if (vErr) {
-              console.warn("[StepDataTable] visits jp fetch error", printableError(vErr));
-            }
-          } else {
-            setVisitStatusMap({});
-          }
-        } else {
-          setVisitStatusMap({});
-        }
-      } catch (e) {
-        console.warn("[StepDataTable] visits jp map error", printableError(e));
-      }
-
-      /* ===== lookups */
-      if (cfg.lookups) {
-        const next: Record<string, Record<string, string>> = {};
-
-        for (const [colKey, lu] of Object.entries(cfg.lookups)) {
-          const idsForLookup = Array.from(
-            new Set(
-              arr
-                .map((r) => (r as Row)[colKey])
-                .filter((v): v is string | number => typeof v === "string" || typeof v === "number")
-                .map((v) => String(v))
-            )
-          );
-          if (idsForLookup.length === 0) continue;
-
-          const lres = await supabase.from(lu.table).select(lu.select).in("id", idsForLookup);
-
-          if (!lres.error && Array.isArray(lres.data)) {
-            const map: Record<string, string> = {};
-            for (const recUnknown of lres.data as unknown[]) {
-              if (!isObjRecord(recUnknown)) continue;
-              const rec = recUnknown as Record<string, unknown>;
-              const id = getId(rec);
-
-              const labelPrimary = getStr(rec, lu.labelField);
-              const labelArabic = lu.labelFieldAr ? getStr(rec, lu.labelFieldAr) : "";
-              map[id] = (isArabic && labelArabic) ? labelArabic : labelPrimary || id;
-            }
-            next[colKey] = map;
-          } else if (lres.error) {
-            console.warn("[StepDataTable] lookup error", printableError(lres.error));
-          }
-        }
-
-        setLookups(next);
-      } else {
-        setLookups({});
-      }
-    } catch (e: unknown) {
-      let msg = "Failed to fetch";
-      if (e instanceof Error && e.message) msg = e.message;
-      else if (typeof e === "object" && e !== null && "message" in e) {
-        const m = (e as { message?: unknown }).message;
-        if (typeof m === "string") msg = m;
-      }
-      console.error("[StepDataTable] fetch error", printableError(e));
-      setErrMsg(msg);
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [cfg, page, pageSize, visitId, isArabic, startDate, endDate, step]);
-
-  useEffect(() => {
-    setPage(0);
-  }, [step, visitId]);
-
-  useEffect(() => {
-    fetchPage();
-  }, [fetchPage]);
-
+function Empty({ text }: { text: string }) {
   return (
-    <div className="mt-4">
-      <div className="overflow-auto border border-[var(--divider)] rounded-xl">
-        <table className="min-w-full text-sm">
-          <thead className="bg-[var(--header-bg)] sticky top-0">
-            <tr className="text-left">
-              {visibleCols.map((col, idx) => (
-                <th
-                  key={col.key + String(idx)}
-                  className="px-3 py-2 whitespace-nowrap border-b border-[var(--divider)]"
-                >
-                  {isArabic ? col.labelAr : col.labelEn}
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody>
-            {loading ? (
-              <tr><td className="px-3 py-4" colSpan={visibleCols.length}>…loading</td></tr>
-            ) : errMsg ? (
-              <tr><td className="px-3 py-4 text-red-400" colSpan={visibleCols.length}>{errMsg}</td></tr>
-            ) : rows.length === 0 ? (
-              <tr><td className="px-3 py-4" colSpan={visibleCols.length}>{isArabic ? "لا توجد بيانات" : "No data"}</td></tr>
-            ) : (
-              rows.map((r, ridx) => (
-                <tr key={(r.id as string) ?? ridx} className="odd:bg-[var(--card)] even:bg-transparent">
-                  {visibleCols.map((col) => {
-                    const rawV = r[col.key as keyof Row];
-                    const lu = cfg.lookups?.[col.key];
-                    let display: unknown =
-                      lu && (typeof rawV === "string" || typeof rawV === "number")
-                        ? (lookups[col.key]?.[String(rawV)] ?? rawV)
-                        : rawV;
-
-                    if (
-                      (!display || String(display).trim() === "" || display === "-") &&
-                      JP_FIELDS.includes(col.key as (typeof JP_FIELDS)[number]) &&
-                      (r as Row).visit_id
-                    ) {
-                      const vid = getVisitId(r as Row);
-                      if (vid) {
-                        const jp = visitStatusMap[vid as keyof typeof visitStatusMap];
-                        if (jp) display = jp;
-                      }
-                    }
-
-                    const forcedType: CellType =
-                      (col.type as CellType | undefined) ??
-                      (JP_FIELDS.includes(col.key as (typeof JP_FIELDS)[number]) ? "pill" : "text");
-
-                    return (
-                      <td key={col.key} className="px-3 py-2 border-t border-[var(--divider)] align-top">
-                        <CellRenderer
-                          value={display}
-                          type={forcedType}
-                          bucketHint={col.bucketHint}
-                          isArabic={isArabic}
-                          onPreview={(imgs, title) => openViewer(imgs, title)}
-                          column={col}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="flex items-center justify-between mt-3">
-        <button
-          onClick={() => setPage((p) => Math.max(0, p - 1))}
-          disabled={page === 0 || loading}
-          className="px-3 py-2 rounded-xl border border-[var(--divider)] disabled:opacity-50"
-        >
-          {isArabic ? "السابق" : "Prev"}
-        </button>
-        <span className="opacity-80">{isArabic ? `صفحة ${page + 1}` : `Page ${page + 1}`}</span>
-        <button
-          onClick={() => setPage((p) => p + 1)}
-          disabled={loading || rows.length < pageSize}
-          className="px-3 py-2 rounded-xl border border-[var(--divider)] disabled:opacity-50"
-        >
-          {isArabic ? "التالي" : "Next"}
-        </button>
-      </div>
-
-      {/* Lightbox */}
-      {viewer.open && (
-        <div
-          onClick={closeViewer}
-          className="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4 cursor-zoom-out"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="relative max-w-[96vw] w-full max-h-[90vh] bg-[var(--card)] rounded-2xl p-3 border border-[var(--divider)]"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <strong className="text-sm">{viewer.title || ""}</strong>
-              <button onClick={closeViewer} className="px-3 py-1 rounded-xl border border-[var(--divider)]">
-                ×
-              </button>
-            </div>
-            <div className="relative w-full h-[70vh] bg-[var(--input-bg)] rounded-xl overflow-hidden">
-              {viewer.imgs.length > 1 && (
-                <button
-                  onClick={prevImg}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 px-3 py-2 rounded-xl border border-[var(--divider)] bg-black/40 text-white"
-                  title={isArabic ? "السابق" : "Prev"}
-                >
-                  ‹
-                </button>
-              )}
-              <SupaImg
-                src={viewer.imgs[viewer.index]}
-                alt="preview"
-                style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                unoptimized
-              />
-              {viewer.imgs.length > 1 && (
-                <button
-                  onClick={nextImg}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-2 rounded-xl border border-[var(--divider)] bg-black/40 text-white"
-                  title={isArabic ? "التالي" : "Next"}
-                >
-                  ›
-                </button>
-              )}
-            </div>
-            <div className="flex items-center justify-between mt-2">
-              <div className="opacity-80 text-xs">
-                {viewer.index + 1} / {viewer.imgs.length}
-              </div>
-              {viewer.imgs.length > 1 && (
-                <div className="flex gap-2 overflow-auto">
-                  {viewer.imgs.map((u, i) => (
-                    <button
-                      key={u + i}
-                      className={`relative w-12 h-12 rounded border ${
-                        i === viewer.index ? "border-[var(--accent)]" : "border-[var(--divider)]"
-                      }`}
-                      onClick={() => setViewer((v) => ({ ...v, index: i }))}
-                      title={`${i + 1}`}
-                    >
-                      <SupaImg src={u} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} unoptimized />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+    <div
+      style={{
+        border: "1px solid var(--divider)",
+        background: "var(--input-bg)",
+        borderRadius: 12,
+        padding: 16,
+        textAlign: "center",
+        opacity: 0.85,
+      }}
+    >
+      {text}
     </div>
   );
 }
 
-function CellRenderer({
-  value,
-  type = "text",
-  bucketHint,
-  isArabic,
-  onPreview,
-  column,
-}: {
-  value: unknown;
-  type?: CellType;
-  bucketHint?: string;
-  isArabic: boolean;
-  onPreview: (imgs: string[], title?: string) => void;
-  column: StepColumn;
-}) {
-  if (value == null) return <span className="opacity-60">—</span>;
+function groupTlDetailsRows(dataArr: Row[], imageCols: string[], dateCol: string): Row[] {
+  const byVisit = new Map<string, Row>();
+  for (const r of dataArr) {
+    const vid = String(r.visit_id ?? "");
+    if (!vid) continue;
+    if (!byVisit.has(vid)) {
+      byVisit.set(vid, {
+        visit_id: vid,
+        user_id: r.user_id,
+        remark: r.remark ?? "",
+        [dateCol]: r[dateCol],
+        all_photos: [] as string[],
+      } as Row);
+    }
+    const acc = byVisit.get(vid)!;
 
-  switch (type) {
-    case "boolean": {
-      const v = Boolean(value);
-      return <span>{v ? (isArabic ? "نعم" : "Yes") : isArabic ? "لا" : "No"}</span>;
-    }
-    case "number": {
-      const n = Number(value);
-      return (
-        <span>
-          {Number.isFinite(n) ? n.toLocaleString(isArabic ? "ar-EG" : "en-US") : String(value)}
-        </span>
-      );
-    }
-    case "datetime": {
-      try {
-        const d = new Date(String(value));
-        return <span title={d.toISOString()}>{d.toLocaleString(isArabic ? "ar-EG" : "en-US")}</span>;
-      } catch {
-        return <span>{String(value)}</span>;
-      }
-    }
-    case "image": {
-      const imgs = normalizeImageList(value, bucketHint);
-      if (imgs.length === 0) return <span className="opacity-60">—</span>;
-      const first = imgs[0];
-      return (
-        <button
-          type="button"
-          className="block"
-          onClick={() => onPreview(imgs, isArabic ? column.labelAr : column.labelEn)}
-          title={isArabic ? "عرض" : "Preview"}
-        >
-          <div className="relative w-[64px] h-[64px] rounded-md overflow-hidden border border-[var(--divider)]">
-            <SupaImg src={first} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} unoptimized />
-          </div>
-        </button>
-      );
-    }
-    case "pill": {
-      const raw = String(value).replace(/\s+/g, " ").trim().toUpperCase();
-      const variant = raw.includes("OUT")
-        ? "danger"
-        : raw.includes("IN")
-        ? "success"
-        : "neutral";
-      return <BadgePill variant={variant}>{raw || "—"}</BadgePill>;
-    }
-    default: {
-      const text = String(value ?? "").trim();
-      return <span className="whitespace-pre-wrap break-words">{text || "—"}</span>;
+    const cur = acc[dateCol] ? +new Date(String(acc[dateCol])) : 0;
+    const nxt = r[dateCol] ? +new Date(String(r[dateCol])) : 0;
+    if (nxt > cur) acc[dateCol] = r[dateCol];
+
+    if (!acc.remark && r.remark) acc.remark = r.remark as string;
+
+    for (const col of imageCols) {
+      const urls = parseImageUrls(r[col]);
+      if (urls.length) (acc.all_photos as string[]).push(...urls);
     }
   }
+
+  const out: Row[] = Array.from(byVisit.values()).map((x) => {
+    const seen = new Set<string>();
+    const uniq = (x.all_photos as string[]).filter((u) => {
+      if (seen.has(u)) return false;
+      seen.add(u);
+      return true;
+    });
+    return { ...(x as Row), all_photos: uniq } as Row;
+  });
+
+  out.sort((a, b) => {
+    const ta = a[dateCol] ? +new Date(String(a[dateCol])) : 0;
+    const tb = b[dateCol] ? +new Date(String(b[dateCol])) : 0;
+    return tb - ta;
+  });
+
+  return out;
+}
+
+const parseImageUrls = (data: unknown): string[] => {
+  if (Array.isArray(data)) return data as string[];
+  if (typeof data === "string") {
+    try {
+      const p: unknown = JSON.parse(data);
+      if (Array.isArray(p)) return p as string[];
+    } catch {
+      return data
+        .replace(/[{}]/g, "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+};
+
+const asRowArray = (x: unknown): Row[] => (Array.isArray(x) ? (x as unknown as Row[]) : []);
+
+const formatOnlyDate = (isoOrDateLike: unknown) => {
+  if (!isoOrDateLike) return "";
+  try {
+    const d = new Date(String(isoOrDateLike));
+    if (Number.isNaN(+d)) return String(isoOrDateLike);
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  } catch {
+    return String(isoOrDateLike);
+  }
+};
+
+const normalizeJp = (raw: string | null | undefined) => {
+  const s = String(raw || "").trim().toLowerCase();
+  const isIn = s === "in" || s === "in jp" || s.includes("in_jp") || s.includes("in-jp") || s.includes("داخل");
+  const isOut = s === "out" || s === "out of jp" || s.includes("out_jp") || s.includes("out-jp") || s.includes("خارج");
+  if (isIn) return { kind: "IN" as const, labelAr: "داخل", labelEn: "IN" };
+  if (isOut) return { kind: "OUT" as const, labelAr: "خارج", labelEn: "OUT" };
+  return { kind: "" as const, labelAr: "—", labelEn: "—" };
+};
+
+/* ========= Component ========= */
+export default function StepDataTable({
+  step,
+  visitIds = [],
+  startDate,
+  endDate, // eslint-disable-line @typescript-eslint/no-unused-vars
+  userId,
+  pageSize = 30,
+  users = [],
+  jpState,
+}: Props) {
+  const { isArabic: ar } = useLangTheme();
+
+  const [rows, setRows] = useState<Row[]>([]);
+  const [count, setCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+  // خريطة تربط أي اسم (عربي/إنجليزي) بسجل المنتج لعرض الاسم الصحيح
+const [productByAnyName, setProductByAnyName] = useState<Map<string, { name: string | null; arabic_name: string | null }>>(new Map());
+const [loadingProducts, setLoadingProducts] = useState(false);
+
+  const [lightbox, setLightbox] = useState<{ open: boolean; images: ImgRef[]; idx: number }>({
+    open: false,
+    images: [],
+    idx: 0,
+  });
+  
+  const [productNames, setProductNames] = useState<Map<UUID, string>>(new Map());
+  const [resolvedUsers, setResolvedUsers] = useState<UserRow[]>(users);
+
+  const cfg: StepConfig = VISIT_STEPS[step];
+  const dateCol = useMemo(() => dateColumnFor(step), [step]);
+  const idsKey = useMemo(() => visitIds.join("|"), [visitIds]);
+
+  const usersMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const u of resolvedUsers) {
+      const label = (ar ? u.arabic_name : u.name) || u.username || u.id;
+      m.set(u.id, label);
+      if (u.auth_user_id) m.set(u.auth_user_id, label);
+    }
+    return m;
+  }, [resolvedUsers, ar]);
+
+  // === Lookup cache (e.g., user_id -> Users.name/arabic_name) ===
+  const [lookupMaps, setLookupMaps] = useState<Record<string, Map<string, string>>>({});
+
+ useEffect(() => {
+  const entries = cfg.lookups ? Object.entries(cfg.lookups) : [];
+  if (!entries.length || !rows.length) {
+    setLookupMaps({});
+    return;
+  }
+  let alive = true;
+
+  (async () => {
+    type AnyRow = Record<string, unknown>;
+    const asRows = (x: unknown): AnyRow[] => (Array.isArray(x) ? (x as unknown as AnyRow[]) : []);
+    const next: Record<string, Map<string, string>> = {};
+
+    for (const [colKey, lk] of entries) {
+      const ids = Array.from(
+        new Set(rows.map((r) => (r[colKey] as string | null) || null).filter((x): x is string => !!x))
+      );
+      if (!ids.length) continue;
+
+      // الأعمدة المطلوبة لكل جدول
+      let selectStr = lk.select;
+      if (lk.table === "Users") selectStr = "id, auth_user_id, name, arabic_name, username";
+      if (lk.table === "Markets") selectStr = "id, branch, store"; // نجيب store كاحتياط
+      if (lk.table === "Products") selectStr = "id, name, arabic_name";
+      const { data: byIdRaw } = await supabase.from(lk.table).select(selectStr).in("id", ids);
+      const byId = asRows(byIdRaw);
+
+      // دعم auth_user_id لجدول Users فقط
+      let byAuth: AnyRow[] = [];
+      if (lk.table === "Users") {
+        const { data: byAuthRaw } = await supabase.from(lk.table).select(selectStr).in("auth_user_id", ids);
+        byAuth = asRows(byAuthRaw);
+      }
+
+      const merged = [...byId, ...byAuth];
+      const labelKey = ar ? (lk.labelFieldAr || lk.labelField) : lk.labelField;
+
+      const map = new Map<string, string>();
+      for (const row of merged) {
+        const id = String(row["id"]);
+        const auth = lk.table === "Users" && row["auth_user_id"] ? String(row["auth_user_id"]) : null;
+
+        // 👇 هنا العرض للـ branch فقط (ولو فاضي رجّع store، ولو كله فاضي رجّع id)
+        let label: string;
+        if (lk.table === "Markets") {
+          const branch = (row["branch"] as string) || "";
+          const store = (row["store"] as string) || "";
+          label = branch || store || id;
+        } else {
+          label =
+            (row[labelKey] as string) ||
+            (row[lk.labelField] as string) ||
+            (row["arabic_name"] as string) ||
+            (row["name"] as string) ||
+            (row["username"] as string) ||
+            id;
+        }
+
+        map.set(id, label);
+        if (auth) map.set(auth, label);
+      }
+
+      next[colKey] = map;
+    }
+
+    if (alive) setLookupMaps(next);
+  })();
+
+  return () => {
+    alive = false;
+  };
+}, [rows, cfg.lookups, ar]);
+
+// ===== Fetch product names for Damage Reports & WHCount =====
+useEffect(() => {
+  if (!["damage_reports", "whcount"].includes(step)) {
+    setProductByAnyName(new Map());
+    return;
+  }
+
+  if (!rows || rows.length === 0) return;
+
+  let alive = true;
+  (async () => {
+    setLoadingProducts(true);
+
+    // ✅ اجمع كل أسماء المنتجات الظاهرة (AR + EN)
+    const names = Array.from(
+      new Set(
+        rows
+          .map((r) => String(r["item_name"] || "").trim())
+          .filter((x) => x && x !== "null" && x !== "undefined")
+      )
+    );
+
+    if (names.length === 0) {
+      if (alive) setProductByAnyName(new Map());
+      setLoadingProducts(false);
+      return;
+    }
+
+    // ✅ استخدم استعلام مزدوج مستقل بدل .or()
+    const [byName, byArName] = await Promise.all([
+      supabase.from("Products").select("id, name, arabic_name").in("name", names),
+      supabase.from("Products").select("id, name, arabic_name").in("arabic_name", names),
+    ]);
+
+    const all = [
+      ...(byName.data ?? []),
+      ...(byArName.data ?? []),
+    ];
+
+    const map = new Map<string, { name: string | null; arabic_name: string | null }>();
+    for (const p of all) {
+      const name = (p.name || "").trim();
+      const arName = (p.arabic_name || "").trim();
+      if (name) map.set(name, { name, arabic_name: arName });
+      if (arName) map.set(arName, { name, arabic_name: arName });
+    }
+
+    if (alive) {
+      setProductByAnyName(map);
+      setLoadingProducts(false);
+    }
+  })();
+
+  return () => {
+    alive = false;
+  };
+}, [rows, step]);
+
+
+
+ // SELECT: always include user_id & dateCol; NO Markets join
+const selectCols = useMemo(() => {
+  const base = VISIT_STEPS[step].select || "*";
+  const cols = base
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // نضيف user_id فقط لو مش موجود فعلاً
+  if (!cols.includes("user_id")) cols.push("user_id");
+  // نضيف العمود الزمني فقط لو مش موجود
+  if (!cols.includes(dateCol)) cols.push(dateCol);
+
+  return cols.join(", ");
+}, [step, dateCol]);
+
+const visitIdsKey = useMemo(() => visitIds.join("|"), [visitIds]);
+const dataReady =
+  !loading &&
+  !loadingProducts &&
+  rows.length > 0 &&
+  (!cfg.lookups || Object.keys(cfg.lookups).length === 0 || Object.keys(lookupMaps).length > 0);
+
+   /* ===== Fetch step rows ===== */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+
+      const needsVisitIds = step !== "promoter_reports";
+      if ((needsVisitIds && !visitIds.length) || !startDate) {
+        setRows([]); setCount(0); setLoading(false);
+        return;
+      }
+      // دالة صغيرة تشغّل الاستعلام مع select معيّن
+const run = async (sel: string) => {
+  // ⚙️ استخدم count = null لتسريع الاستعلام
+ let q = supabase.from(cfg.table).select(sel, { count: "exact" as const });
+
+  // ✅ فلترة حسب الزيارة + التاريخ معًا إن وُجدا
+if (visitIds?.length) {
+  q = q.in("visit_id", visitIds);
+}
+if (startDate) {
+  const { fromISO, toISO } = toKsaDayRange(startDate);
+  q = q.gte(dateCol, fromISO).lt(dateCol, toISO);
+}
+
+  // ✅ فلترة المستخدم
+  if (userId) {
+    const authId = resolvedUsers.find((u) => u.id === userId)?.auth_user_id;
+    const usesAuthUsers = ["whcount", "sos_reports"];
+    if (usesAuthUsers.includes(step)) {
+      q = q.eq("user_id", authId || userId);
+    } else {
+      if (authId) q = q.or(`user_id.eq.${userId},user_id.eq.${authId}`);
+      else q = q.eq("user_id", userId);
+    }
+  }
+
+  // ✅ تخصيص استعلام الخطوات الثقيلة (availability / damage_reports)
+  if (["availability", "damage_reports"].includes(step)) {
+    q = q.limit(200);
+  } else {
+    q = q
+      .order(cfg.defaultOrder?.column ?? dateCol, {
+        ascending: cfg.defaultOrder?.ascending ?? false,
+      })
+      .limit(pageSize);
+  }
+
+  const { data, count: c, error } = await q;
+  return { data: asRowArray(data), count: c ?? (data?.length ?? 0), error };
+};
+
+
+      // جرّب أولًا بالـ selectCols، ولو فشل ارجع جرّب بـ *
+      let res = await run(selectCols);
+
+if (!res || res.error) {
+  console.warn("[StepDataTable] select failed, falling back to '*':", res?.error);
+  res = await run("*");
+}
+
+if (!alive) return;
+
+if (res?.error) {
+  console.warn("[StepDataTable] fetch error (after fallback):", res.error);
+  setRows([]); setCount(0); setLoading(false);
+  return;
+}
+
+// ✅ خليه هنا مرة واحدة فقط
+let dataArr = res?.data ?? [];
+
+// ✅ لو كانت الخطوة sos_reports نوحّد الفئة حسب اللغة
+if (step === "sos_reports") {
+  dataArr = dataArr.map((r) => ({
+    ...r,
+    category_name: ar ? r.category_name_ar : r.category_name_en,
+  }));
+}
+
+setRows(dataArr);
+setCount(res?.count || dataArr.length);
+
+
+      if (step === "tl_details") {
+        const imageCols = cfg.columns.filter((c) => c.type === "image").map((c) => c.key);
+        const grouped = groupTlDetailsRows(dataArr, imageCols, dateCol);
+        setRows(grouped);
+        setCount(grouped.length);
+        setLoading(false);
+        return;
+      }
+
+      if (step === "promoter_plus_reports") {
+        type ItemJson = { product_id: string; available: boolean; quantity: number; [k: string]: unknown };
+        const flattened: Row[] = [];
+        for (const row of dataArr) {
+          const items = row.items as ItemJson[] | null;
+          if (items?.length) {
+            items.forEach((item, idx) => {
+              flattened.push({
+                ...row,
+                photos: idx === 0 ? row.photos : undefined,
+                product_id: item.product_id,
+                is_available: item.available,
+                quantity: item.quantity,
+                items: undefined,
+              });
+            });
+          } else {
+            flattened.push({
+              ...row,
+              photos: row.photos,
+              product_id: ar ? "لا توجد عناصر" : "No items",
+              is_available: false,
+              quantity: 0,
+              items: undefined,
+            });
+          }
+        }
+        dataArr = flattened;
+      }
+
+      setRows(dataArr);
+      setCount(res?.count ?? dataArr.length);
+      setLoading(false);
+    })();
+
+    return () => { alive = false; };
+  }, [
+    cfg.table, cfg.columns, cfg.defaultOrder?.column, cfg.defaultOrder?.ascending,
+    selectCols, dateCol, idsKey, pageSize, step, visitIds, startDate, userId, resolvedUsers, ar, visitIdsKey
+  ]);
+
+  /* ===== Fetch Users (fallback) ===== */
+  useEffect(() => {
+    if (users && users.length) {
+      setResolvedUsers(users);
+      return;
+    }
+    const ids = Array.from(
+      new Set(rows.map((r) => String(r["user_id"] || "")).filter((x) => x && x !== "null" && x !== "undefined"))
+    );
+    if (!ids.length) {
+      setResolvedUsers([]);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      const sel = "id, auth_user_id, name, arabic_name, username, role, team_leader_id";
+      const [{ data: byId }, { data: byAuth }] = await Promise.all([
+        supabase.from("Users").select(sel).in("id", ids),
+        supabase.from("Users").select(sel).in("auth_user_id", ids),
+      ]);
+      if (!alive) return;
+
+      const merged = [...(byId ?? []), ...(byAuth ?? [])] as UserRow[];
+      setResolvedUsers(Array.from(new Map(merged.map((u) => [u.id, u])).values()));
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [rows, users]);
+
+  /* ===== Fetch Product Names (for Promoter Plus) ===== */
+  useEffect(() => {
+    if (step !== "promoter_plus_reports" || !rows.length) {
+      setProductNames(new Map());
+      return;
+    }
+    let alive = true;
+    (async () => {
+      const productIds = Array.from(new Set(rows.map((r) => r.product_id as string).filter(Boolean)));
+      if (!productIds.length) {
+        if (alive) setProductNames(new Map());
+        return;
+      }
+      const { data } = await supabase.from("Products").select("id, name, arabic_name").in("id", productIds);
+      if (!alive) return;
+      const nameMap = new Map<UUID, string>();
+      const nameKey = ar ? "arabic_name" : "name";
+      for (const p of data ?? []) {
+        nameMap.set(p.id, (p[nameKey] || p.name || p.id) as string);
+      }
+      setProductNames(nameMap);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [rows, step, ar]);
+
+  /* ===== Lightbox helpers ===== */
+  const allVisitImages = useMemo(() => {
+    const acc: { url: string; bucket?: string }[] = [];
+    for (const r of rows) {
+      for (const [k, v] of Object.entries(r)) {
+        const key = k.toLowerCase();
+        if (key === "all_photos") {
+          const urls = (v as string[]) || [];
+          urls.forEach((u) => acc.push({ url: u, bucket: undefined }));
+          continue;
+        }
+        if (key.includes("image") || key.includes("photo") || key === "image_urls") {
+          const urls = parseImageUrls(v);
+          const colCfg = cfg.columns.find((c) => c.key === k);
+          urls.forEach((u) => acc.push({ url: u, bucket: /^https?:\/\//i.test(u) ? undefined : colCfg?.bucketHint }));
+        }
+      }
+    }
+    const seen = new Set<string>();
+    const out: { url: string; bucket?: string }[] = [];
+    for (const it of acc) {
+      const key = `${it.bucket ?? ""}::${it.url}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(it);
+      }
+    }
+    return out;
+  }, [rows, cfg.columns]);
+
+  const openLightbox = (url: string) => {
+    const idx = Math.max(0, allVisitImages.findIndex((x) => x.url === url));
+    setLightbox({ open: true, images: allVisitImages, idx });
+  };
+  const closeLightbox = () => setLightbox((s) => ({ ...s, open: false }));
+  const nextImg = (e?: React.MouseEvent<HTMLButtonElement>) => {
+    if (e) e.stopPropagation();
+    setLightbox((s) => ({ ...s, idx: (s.idx + 1) % (s.images.length || 1) }));
+  };
+  const prevImg = (e?: React.MouseEvent<HTMLButtonElement>) => {
+    if (e) e.stopPropagation();
+    setLightbox((s) => ({ ...s, idx: (s.idx - 1 + (s.images.length || 1)) % (s.images.length || 1) }));
+  };
+
+  // تنقّل بالكيبورد
+  useEffect(() => {
+    if (!lightbox.open) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") closeLightbox();
+      if (ev.key === "ArrowRight") nextImg();
+      if (ev.key === "ArrowLeft") prevImg();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox.open]);
+const isLoadingEverything =
+  loading || // التحميل الأساسي
+  loadingProducts; // تحميل أسماء المنتجات فقط (بدون انتظار الـ lookups)
+
+// ❌ تم حذف هذا الشرط لأنه كان يسبب التعليق
+// || ((step === "damage_reports" || step === "whcount") && rows.length > 0 && productByAnyName.size === 0);
+// 🕐 نضيف تأخير بسيط قبل عرض الجدول (1 ثانية فقط)
+const [delayedReady, setDelayedReady] = useState(false);
+useEffect(() => {
+  if (!isLoadingEverything) {
+    const timer = setTimeout(() => setDelayedReady(true), 1500); // 1 ثانية
+    return () => clearTimeout(timer);
+  } else {
+    setDelayedReady(false);
+  }
+}, [isLoadingEverything]);
+
+if (!delayedReady) {
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        minHeight: 200,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.03)",
+        borderRadius: 12,
+      }}
+    >
+      <div
+        style={{
+          width: 50,
+          height: 50,
+          borderRadius: "50%",
+          border: "4px solid rgba(255,215,0,0.25)",
+          borderTop: "4px solid gold",
+          animation: "spin 1s linear infinite",
+        }}
+      />
+      <style jsx>{`
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
+      <div
+        style={{
+          position: "absolute",
+          bottom: 25,
+          fontSize: 14,
+          color: "#bbb",
+          fontWeight: 500,
+        }}
+      >
+        {ar ? "جارٍ تحميل البيانات..." : "Loading data..."}
+      </div>
+    </div>
+  );
+}
+
+
+const needsVisitIds = step !== "promoter_reports";
+
+if ((needsVisitIds && visitIds.length === 0) || !startDate) {
+  return <Empty text={ar ? "الرجاء اختيار زيارة أولاً" : "Please select a visit first"} />;
+}
+  if (!rows.length) return <Empty text={ar ? "لا توجد بيانات" : "No data"} />;
+
+  // ===== Columns =====
+  const rowKeys = Object.keys(rows[0] || {});
+ const HIDDEN = new Set([
+  "id",
+  "visit_id",
+  "customer_name",
+  "Markets",
+  "items",
+  "updated_at",
+  "client_id",
+  "category_name_ar", // 👈 أضف دي
+  "category_name_en", // 👈 ودي
+   "item_code",
+   "item_photo",
+  ...((step === "promoter_plus_reports" || step === "availability") ? [] : ["product_id"]),
+  ...(step === "promoter_plus_reports" ? ["user_id"] : []),
+  ...(step === "remarks" || step === "availability" || step === "arrival_photos" || step === "promoter_reports"
+    ? [] : ["user_id"]),
+]);
+
+
+  // 1) الترتيب المفضّل حسب تعريف config
+  const preferredOrder = cfg.columns.map((c) => c.key);
+
+  // 2) الأعمدة الظاهرة فعلاً وبنفس الترتيب المفضل
+  let visibleColumns = preferredOrder.filter((k) => rowKeys.includes(k) && !HIDDEN.has(k));
+
+  // 3) أي أعمدة إضافية ظهرت في الداتا وغير معرّفة في config نضيفها آخر الجدول
+  for (const k of rowKeys) {
+    if (!HIDDEN.has(k) && !visibleColumns.includes(k)) visibleColumns.push(k);
+  }
+
+  // 4) الحالات الخاصة
+  if (step === "tl_details") {
+    visibleColumns = ["all_photos", "remark", dateCol, "User", "jp_state_view"];
+  } else if (step === "arrival_photos") {
+    visibleColumns = visibleColumns.filter((k) => k !== "created_at");
+    if (!visibleColumns.includes("arrival_time") && rowKeys.includes("arrival_time")) {
+      visibleColumns.unshift("arrival_time");
+    }
+  }
+
+  if (
+    rowKeys.includes("user_id") &&
+    !["promoter_reports", "remarks", "availability", "arrival_photos", "promoter_plus_reports"].includes(step)
+  ) {
+    const idx = visibleColumns.indexOf("market_id");
+    const insertAt = idx >= 0 ? idx + 1 : visibleColumns.length;
+    if (!visibleColumns.includes("User")) visibleColumns.splice(insertAt, 0, "User");
+  }
+
+  if (step === "promoter_reports" && visibleColumns.includes("use_count")) {
+    const i = visibleColumns.indexOf("use_count");
+    visibleColumns.splice(i, 1);
+    const j = visibleColumns.indexOf("visit_count");
+    const insertAt = j >= 0 ? j + 1 : visibleColumns.length;
+    visibleColumns.splice(insertAt, 0, "use_count");
+  }
+
+  if (!visibleColumns.includes("jp_state_view")) {
+    visibleColumns.push("jp_state_view");
+  }
+
+  // منع أي تكرار في الأعمدة (يحل تحذير مفاتيح React)
+  visibleColumns = Array.from(new Set(visibleColumns));
+
+  const getColCfg = (k: string) => cfg.columns.find((c) => c.key === k);
+  const isImageCol = (k: string) => getColCfg(k)?.type === "image";
+
+  const headerLabel = (k: string) => {
+    const col = cfg.columns.find((c) => c.key === k);
+    if (col) return ar ? col.labelAr || col.labelEn || k : col.labelEn || col.labelAr || k;
+    const mapAr: Record<string, string> = {
+      image_urls: "صور الزيارة",
+      best_seller: "الأفضل مبيعاً",
+      buy_count: "اشتري المنتج",
+      refuse_count: "رفض الاستخدام",
+      use_count: "استخدم",
+      visit_count: "زيارة",
+      created_at: "التاريخ",
+      arrival_time: "التاريخ",
+      market_id: "الفرع",
+      User: "المستخدم",
+      jp_state_view: "خط سير الزيارة",
+      remark: "ملاحظة",
+      photos: "الصور",
+      product_id: "المنتجات",
+      is_available: "التواجد",
+      quantity: "الكميات المباعه",
+      photo_url: "الصور",
+      all_photos: "الصور",
+    };
+    const mapEn: Record<string, string> = {
+      image_urls: "Visit Images",
+      best_seller: "Best Seller",
+      buy_count: "Bought",
+      refuse_count: "Refused",
+      use_count: "Use count",
+      visit_count: "Visits",
+      created_at: "Date",
+      arrival_time: "Date",
+      market_id: "Market",
+      User: "User",
+      jp_state_view: "JP State",
+      photos: "Photos",
+      product_id: "Products",
+      is_available: "Availability",
+      quantity: "SOLD QTY",
+      photo_url: "Photos",
+      all_photos: "Photos",
+    };
+    const dict = ar ? mapAr : mapEn;
+    return dict[k] || k;
+  };
+
+  const onPrevClick = (e: React.MouseEvent<HTMLButtonElement>) => prevImg(e);
+  const onNextClick = (e: React.MouseEvent<HTMLButtonElement>) => nextImg(e);
+  // ===== Loading Overlay أثناء تحميل البيانات أو المنتجات =====
+if (!dataReady) {
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        minHeight: 200,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.03)",
+        borderRadius: 12,
+      }}
+    >
+      <div
+        style={{
+          width: 50,
+          height: 50,
+          borderRadius: "50%",
+          border: "4px solid rgba(255,215,0,0.25)",
+          borderTop: "4px solid gold",
+          animation: "spin 1s linear infinite",
+        }}
+      />
+      <style jsx>{`
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
+      <div
+        style={{
+          position: "absolute",
+          bottom: 25,
+          fontSize: 14,
+          color: "#bbb",
+          fontWeight: 500,
+        }}
+      >
+        {ar ? "جارٍ تحميل البيانات..." : "Loading data..."}
+      </div>
+    </div>
+  );
+}
+    return (
+  <>
+    {/* ✅ أثناء التحميل الجزئي (lookup/products) نعرض سبينر overlay فوق الجدول */}
+    <div style={{ position: "relative", overflowX: "auto" }}>
+      {(loading || loadingProducts) && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "rgba(0,0,0,0.3)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10,
+            backdropFilter: "blur(2px)",
+          }}
+        >
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              border: "4px solid rgba(255,215,0,0.25)",
+              borderTop: "4px solid gold",
+              borderRadius: "50%",
+              animation: "spin 1s linear infinite",
+            }}
+          />
+          <style jsx>{`
+            @keyframes spin {
+              from {
+                transform: rotate(0deg);
+              }
+              to {
+                transform: rotate(360deg);
+              }
+            }
+          `}</style>
+        </div>
+      )}
+
+      {/* الجدول */}
+      <table
+        style={{
+          width: "100%",
+          borderCollapse: "collapse",
+          visibility:
+  loading || loadingProducts
+    ? "hidden"
+    : "visible",
+        }}
+      >
+
+          <thead>
+            <tr>
+              {visibleColumns.map((k) => (
+                <th
+                  key={k}
+                  style={{
+                    textAlign: ar ? "right" : "left",
+                    borderBottom: "1px solid var(--divider)",
+                    padding: "8px 6px",
+                  }}
+                >
+                  {headerLabel(k)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+               {visibleColumns.map((k) => {
+  // ✅ إخفاء عمود كود الصنف نهائيًا
+  if (k === "item_code") {
+    return null;
+  }
+
+  // ✅ تعديل اسم الصنف في المستودع حسب اللغة
+  if (k === "item_name" && step === "whcount") {
+    const rawName = String(r[k] ?? "").trim();
+
+    // ✅ ترجمة كلمة __MAIN__
+    if (rawName === "__MAIN__") {
+      return (
+        <td key={k} style={cellStyle}>
+          {ar ? "صورة المستودع" : "WH Photo"}
+        </td>
+      );
+    }
+
+    // ✅ لو المنتج موجود في Products نعرض الاسم الصحيح حسب اللغة
+    const prod = productByAnyName.get(rawName);
+    const localized = prod
+      ? ar
+        ? prod.arabic_name || prod.name || rawName
+        : prod.name || prod.arabic_name || rawName
+      : rawName;
+
+    return (
+      <td key={k} style={cellStyle}>
+        {localized}
+      </td>
+    );
+  }
+
+  // A) User synthetic column
+  if (k === "User") {
+    const id = r["user_id"] as string;
+    const label =
+      lookupMaps["user_id"]?.get(id) ||
+      usersMap.get(id) ||
+      (() => {
+        const u = resolvedUsers.find((u) => u.id === id || u.auth_user_id === id);
+        if (!u) return undefined;
+        return (ar ? u.arabic_name : u.name) || u.username || u.id;
+      })() ||
+      id;
+
+    return (
+      <td key="user-name" style={cellStyle}>
+        {label}
+      </td>
+    );
+  }
+
+// Notes mapping (instore / flyer / extra visibility)
+if (k === "notes") {
+  const value = formatPromoNote(r[k], ar);
+  // لون مميز لكل نوع
+  const color = "#fff";
+let bg = "#444";
+  if (value.includes("عرض") || value.toLowerCase().includes("in-store")) bg = "#2b6cb0"; // أزرق
+  if (value.includes("بروشور") || value.toLowerCase().includes("flyer")) bg = "#2b6cb0"; // وردي
+  if (value.includes("مساحة") || value.toLowerCase().includes("extra")) bg = "#2b6cb0"; // ذهبي
+
+  return (
+    <td key={k} style={cellStyle}>
+      <span
+        style={{
+          background: bg,
+          color,
+          fontWeight: 600,
+          fontSize: 13,
+          padding: "4px 10px",
+          borderRadius: 8,
+          display: "inline-block",
+          textAlign: "center",
+          whiteSpace: "nowrap",
+          minWidth: 100,
+        }}
+      >
+        {value}
+      </span>
+    </td>
+  );
+}
+
+                  // B) Generic lookup columns
+                  const colCfg = getColCfg(k);
+                  if (colCfg?.lookup) {
+                    const raw = r[k] as string | null;
+                    const label = (raw && lookupMaps[colCfg.lookup]?.get(raw)) || raw || "";
+                    return (
+                      <td key={k} style={cellStyle}>
+                        {label}
+                      </td>
+                    );
+                  }
+
+                  // C) Image columns (+ hide duplicates for availability)
+                  if (isImageCol(k)) {
+                    let shouldHide = false;
+                    if (step === "availability" && i > 0) {
+                      const prevRow = rows[i - 1];
+                      const currRow = r;
+                      if (k === "category_photos") {
+                        if (prevRow.category_id === currRow.category_id) shouldHide = true;
+                      } else if (k === "place_photos") {
+                        if (prevRow.category_id === currRow.category_id && prevRow.place_id === currRow.place_id)
+                          shouldHide = true;
+                      }
+                    }
+                    if (shouldHide) {
+                      return <td key={k} style={cellStyle}></td>;
+                    }
+
+                    const urls = parseImageUrls(r[k]);
+                    const c = getColCfg(k);
+                    const bucket = c?.bucketHint;
+                    return (
+                      <td key={k} style={{ ...cellStyle, whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "nowrap",
+                            gap: 6,
+                            overflowX: "auto",
+                            padding: "2px 0",
+                            scrollbarWidth: "thin",
+                          }}
+                        >
+                          {urls.map((url, idx) => (
+                            <button
+                              key={`${url}-${idx}`}
+                              onClick={() => openLightbox(url)}
+                              title={ar ? "عرض" : "View"}
+                              style={{
+                                flex: "0 0 auto",
+                                width: 40,
+                                height: 40,
+                                borderRadius: 4,
+                                overflow: "hidden",
+                                border: "1px solid var(--divider)",
+                                cursor: "pointer",
+                                padding: 0,
+                                background: "transparent",
+                              }}
+                            >
+                              <SupaImg
+                                src={url}
+                                bucketHint={/^https?:\/\//i.test(url) ? undefined : bucket}
+                                alt={`img-${idx + 1}`}
+                                objectFit="cover"
+                                width={40}
+                                height={40}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    );
+                  }
+
+                  // D) TL aggregated photos
+                  if (k === "all_photos") {
+                    const urls = (r.all_photos as string[]) || [];
+                    return (
+                      <td key={k} style={{ ...cellStyle, whiteSpace: "nowrap", verticalAlign: "middle", maxWidth: 360 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "nowrap",
+                            gap: 6,
+                            overflowX: "auto",
+                            padding: "2px 0",
+                            scrollbarWidth: "thin",
+                          }}
+                        >
+                          {urls.map((url, idx) => (
+                            <button
+                              key={`${url}-${idx}`}
+                              onClick={() => openLightbox(url)}
+                              title={ar ? "عرض" : "View"}
+                              style={{
+                                flex: "0 0 auto",
+                                width: 40,
+                                height: 40,
+                                borderRadius: 4,
+                                overflow: "hidden",
+                                border: "1px solid var(--divider)",
+                                cursor: "pointer",
+                                padding: 0,
+                                background: "transparent",
+                              }}
+                            >
+                              <SupaImg src={url} alt={`img-${idx + 1}`} objectFit="cover" width={40} height={40} />
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    );
+                  }
+
+                  // E) Legacy image_urls
+                  if (k === "image_urls") {
+                    const urls = parseImageUrls(r[k]);
+                    const c = cfg.columns.find((c) => c.key === k);
+                    const bucket = c?.bucketHint;
+                    return (
+                      <td key={k} style={{ ...cellStyle, whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "nowrap",
+                            gap: 6,
+                            overflowX: "auto",
+                            padding: "2px 0",
+                            scrollbarWidth: "thin",
+                          }}
+                        >
+                          {urls.map((url, idx) => (
+                            <button
+                              key={`${url}-${idx}`}
+                              onClick={() => openLightbox(url)}
+                              title={ar ? "عرض" : "View"}
+                              style={{
+                                flex: "0 0 auto",
+                                width: 40,
+                                height: 40,
+                                borderRadius: 4,
+                                overflow: "hidden",
+                                border: "1px solid var(--divider)",
+                                cursor: "pointer",
+                                padding: 0,
+                                background: "transparent",
+                              }}
+                            >
+                              <SupaImg
+                                src={url}
+                                bucketHint={/^https?:\/\//i.test(url) ? undefined : bucket}
+                                alt={`img-${idx + 1}`}
+                                objectFit="cover"
+                                width={40}
+                                height={40}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    );
+                  }
+// Item name (damage_reports): اعرض حسب اللغة لو وجدنا المنتج
+if (k === "item_name" && step === "damage_reports") {
+  const rawName = String(r[k] ?? "").trim();
+  const prod = productByAnyName.get(rawName);
+  const localized = prod ? (ar ? (prod.arabic_name || prod.name || rawName) : (prod.name || prod.arabic_name || rawName)) : rawName;
+
+  return (
+    <td key={k} style={cellStyle}>
+      {localized}
+    </td>
+  );
+}
+
+                  // F) Product name mapping
+                  if (k === "product_id") {
+                    const pid = r[k] as string;
+                    const productName = productNames.get(pid) || pid;
+                    return (
+                      <td key={k} style={cellStyle}>
+                        {productName}
+                      </td>
+                    );
+                  }
+
+                  // G) Market label
+if (k === "market_id") {
+  const raw = r[k] as string | null;
+  // جرّب من الـ lookup أولاً
+  const fromLookup = raw ? lookupMaps["market_id"]?.get(raw) : null;
+
+  if (fromLookup) {
+    return <td key={k} style={cellStyle}>{fromLookup}</td>;
+  }
+
+  // توافقاً مع الكود القديم لو كان فيه Markets(...) join
+  const m = r["Markets"] as MarketInfoRow | undefined;
+  const fallback = (m?.store ? `${m.store}${m?.branch ? " - " : ""}` : "") + (m?.branch || "");
+
+  return (
+    <td key={k} style={cellStyle}>
+      {fallback || (raw ?? "")}
+    </td>
+  );
+}
+
+                  // H) Dates
+                  if (k === "created_at" || k === "arrival_time") {
+                    return (
+                      <td key={k} style={cellStyle}>
+                        {formatOnlyDate(r[k])}
+                      </td>
+                    );
+                  }
+
+                  // I) JP state — فضّل قيمة الصف ثم prop
+                  if (k === "jp_state_view") {
+                    const raw = (r["jp_state"] as string | null | undefined) ?? jpState;
+                    const norm = normalizeJp(raw);
+                    const variant = norm.kind === "IN" ? "success" : norm.kind === "OUT" ? "danger" : "neutral";
+                    return (
+                      <td key={k} style={cellStyle}>
+                        <BadgePill variant={variant}>{ar ? norm.labelAr : norm.labelEn}</BadgePill>
+                      </td>
+                    );
+                  }
+
+                  // Availability cell style
+                  if (k === "is_available") {
+                    const val = r[k];
+                    const label = val === true ? (ar ? "متوفر" : "Available") : ar ? "غير متوفر" : "Not Available";
+                    const color = val === true ? "var(--success-text, #28a745)" : "var(--danger-text, #dc3545)";
+                    return (
+                      <td key={k} style={{ ...cellStyle, color: color, fontWeight: 500 }}>
+                        {label}
+                      </td>
+                    );
+                  }
+
+                  // J) Default
+                  return (
+                    <td key={k} style={cellStyle}>
+                      {String(r[k] ?? "")}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
+          {ar ? "العدد:" : "Count:"} {count}
+        </div>
+      </div>
+
+      {/* Lightbox */}
+      {lightbox.open && (
+        <div
+          onClick={closeLightbox}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10000,
+            cursor: "pointer",
+            padding: 12,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "relative",
+              width: "min(92vw, 1200px)",
+              height: "min(88vh, 800px)",
+              borderRadius: 8,
+              overflow: "hidden",
+              border: "2px solid #fff",
+              background: "#000",
+            }}
+          >
+            <SupaImg
+              src={lightbox.images[lightbox.idx]?.url}
+              bucketHint={lightbox.images[lightbox.idx]?.bucket}
+              alt={`preview-${lightbox.idx + 1}`}
+              objectFit="contain"
+              fill
+              unoptimized
+            />
+            {lightbox.images.length > 1 && (
+              <>
+                <button onClick={onPrevClick} aria-label="previous" title={ar ? "السابق" : "Previous"} style={navBtnStyle("left")}>
+                  ‹
+                </button>
+                <button onClick={onNextClick} aria-label="next" title={ar ? "التالي" : "Next"} style={navBtnStyle("right")}>
+                  ›
+                </button>
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: 8,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    background: "rgba(0,0,0,.55)",
+                    color: "#fff",
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    fontSize: 12,
+                  }}
+                >
+                  {lightbox.idx + 1} / {lightbox.images.length}
+                </div>
+              </>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                closeLightbox();
+              }}
+              aria-label="close"
+              title={ar ? "إغلاق" : "Close"}
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 8,
+                padding: "6px 10px",
+                borderRadius: 8,
+                border: "1px solid rgba(255,255,255,.25)",
+                background: "rgba(0,0,0,.5)",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+const cellStyle: React.CSSProperties = {
+  borderBottom: "1px solid var(--divider)",
+  padding: "8px 6px",
+  fontSize: 13,
+  verticalAlign: "middle",
+};
+
+function navBtnStyle(side: "left" | "right"): React.CSSProperties {
+  return {
+    position: "absolute",
+    top: "50%",
+    [side]: 8,
+    transform: "translateY(-50%)",
+    width: 40,
+    height: 40,
+    borderRadius: "999px",
+    border: "1px solid rgba(255,255,255,.25)",
+    background: "rgba(0,0,0,.5)",
+    color: "#fff",
+    fontSize: 24,
+    lineHeight: "38px",
+    textAlign: "center",
+    cursor: "pointer",
+    userSelect: "none",
+    direction: "ltr",
+    unicodeBidi: "isolate",
+  } as React.CSSProperties;
 }

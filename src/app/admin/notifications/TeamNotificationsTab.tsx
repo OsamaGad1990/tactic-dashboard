@@ -1,14 +1,10 @@
 "use client";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabaseClient";
 import RecipientDrawer from "./RecipientDrawer";
 import { useLangTheme } from "@/hooks/useLangTheme";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-);
 
 /* ========== Types ========== */
 type NotiRow = {

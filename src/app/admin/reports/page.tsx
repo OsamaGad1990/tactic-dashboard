@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { createClient } from "@supabase/supabase-js";
 import { useLangTheme } from "@/hooks/useLangTheme";
 import StepsToolbar from "@/app/admin/visit-steps/StepsToolbar";
 import StepDataTable from "@/app/admin/visit-steps/StepDataTable";
@@ -10,18 +9,13 @@ import { VISIT_STEPS, StepKey } from "@/utils/visitStepsMap";
 import SupaImg from "@/components/SupaImg";
 import { useAdminCascadingFilters } from "@/hooks/useAdminCascadingFilters";
 import type { PostgrestError } from "@supabase/supabase-js";
-
-/* ========= Supabase ========= */
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-);
-
+import { useScopeLock } from "@/hooks/useScopeLock";
+import { supabase } from "@/lib/supabaseClient";
 /* ========= Types ========= */
 type UUID = string;
 
 type AllVisitsCombinedRow = {
-  id: UUID | null;            // visit_id
+  id: UUID | null;
   tl_visit_id: UUID | null;
   user_id: UUID;
   market_id: UUID;
@@ -33,11 +27,13 @@ type AllVisitsCombinedRow = {
   end_reason_en: string | null;
   end_reason_ar: string | null;
   end_visit_photo: string | null;
+  source_table?: "Visits" | "TLVisits" | null;
+  jp_state: string | null;
 };
-
 
 type UserRow = {
   id: UUID;
+  auth_user_id?: UUID | null; 
   name: string | null;
   username: string | null;
   arabic_name: string | null;
@@ -64,11 +60,13 @@ type SnapshotRow = {
   client_id: UUID | null;
   snapshot_date: string;
   status: string;
+  jp_state?: string | null;
   started_at: string | null;
   finished_at: string | null;
   end_reason_en: string | null;
   end_reason_ar: string | null;
   end_visit_photo: string | null;
+  source_table?: "Visits" | "TLVisits" | null;
 };
 
 type UserSettingsRow = {
@@ -78,14 +76,16 @@ type UserSettingsRow = {
   Team_leader: UUID[] | null;
 };
 
+
 /* ========= Helpers ========= */
 const isAdminRole = (role?: string | null) => {
   const r = (role || "").toLowerCase().trim();
   return r === "admin" || r === "super_admin" || r === "super admin";
 };
-const isTLRole = (role?: string | null) =>
-  (role || "").toLowerCase().includes("team_leader") ||
-  (role || "").toLowerCase().includes("team leader");
+const isTLRole = (role?: string | null) => {
+  const r = (role || "").toLowerCase();
+  return r.includes("team_leader") || r.includes("team leader") || r === "tl" || r === "teamleader";
+};
 
 const roleLabel = (role: string | null, ar: boolean) => {
   const r = (role || "").toLowerCase();
@@ -97,7 +97,168 @@ const roleLabel = (role: string | null, ar: boolean) => {
 
 const cardBorder = "1px solid var(--divider)";
 
-/* ========= Reusable UI ========= */
+const toKsaDayRange = (day: string) => {
+  // day هو 'YYYY-MM-DD'
+ const ymd = day.split("T")[0];
+ const fromISO = `${ymd}T00:00:00+03:00`; // بداية اليوم (بتوقيت السعودية)
+
+  // لإنشاء اليوم التالي بشكل صحيح
+  // 1. أنشئ تاريخاً بناءً على YMD (كسلسلة نصية لضمان التوقيت المحلي)
+  const dateParts = ymd.split('-').map(Number);
+  const year = dateParts[0];
+  const month = dateParts[1] - 1; // (الأشهر تبدأ من 0)
+  const date = dateParts[2];
+  
+  // 2. أنشئ التاريخ (سيفترضه كتوقيت محلي، لا يهم)
+  const d = new Date(year, month, date);
+  
+  // 3. أضف يوماً واحداً
+  d.setDate(d.getDate() + 1);
+  
+  // 4. استخرج الأجزاء (الآن 'd' هو اليوم التالي)
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  
+  // toISO هو بداية اليوم التالي (بتوقيت السعودية)
+ const toISO = `${yyyy}-${mm}-${dd}T00:00:00+03:00`; 
+ return { fromISO, toISO };
+};
+
+// feature_key (من ClientFeatures) -> steps اللي تتحكم فيها
+const FEATURE_TO_STEPS: Record<string, StepKey[]> = {
+ COMPACTIVITY: ["competitor_activity"],
+ SOS: ["sos_reports"],
+ DAMDAGE_COUNT: ["damage_reports"], // ⬅️ تم التصحيح (D-A-G)
+ WH_COUNT: ["whcount"],
+ PLANOGRAM: [], 
+};
+
+// الخطوات الثابتة دايمًا On
+const ALWAYS_ON_STEPS: StepKey[] = ["arrival_photos", "availability", "remarks"];
+const ROLE_STEPS: Record<string, StepKey[]> = {
+  mch: ["arrival_photos", "availability", "whcount", "damage_reports", "sos_reports", "competitor_activity", "remarks"],
+  promoter: ["promoter_reports", "remarks"],
+  promoplus: ["promoter_plus_reports", "remarks"],
+  team_leader: ["tl_details"],
+};
+
+const normalizeRole = (r: string | null | undefined) => {
+  const v = (r || "").toLowerCase().trim();
+  if (v.includes("team_leader")) return "team_leader";
+  if (v === "mch") return "mch";
+  if (v === "promoterplus" || v === "promoplus" || v === "promoter_plus") return "promoplus";
+  if (v === "promoter") return "promoter";
+  return v || "unknown";
+};
+type Option = { value: string; label: string };
+
+function SelectObject({
+  options,
+  value,
+  onChange,
+  placeholder,
+  disabled,
+}: {
+  options: Option[];
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const { isArabic } = useLangTheme();
+  return (
+    <div style={{ position: "relative", opacity: disabled ? 0.6 : 1 }}>
+      <select
+        value={value ?? ""}
+        onChange={(e) => onChange(e.currentTarget.value)}
+        disabled={disabled}
+        style={{
+          width: "100%",
+          height: 36,
+          borderRadius: 8,
+          border: "1px solid var(--input-border)",
+          background: "var(--card)",
+          color: "var(--text)",
+          padding: isArabic ? "0 28px 0 8px" : "0 8px 0 28px",
+        }}
+      >
+        <option value="">{placeholder || ""}</option>
+        {options.map((op) => (
+          <option key={op.value} value={op.value}>
+            {op.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function SelectSingle({
+  options,
+  value,
+  onChange,
+  placeholder,
+  disabled,
+}: {
+  options: string[];
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const mapped: Option[] = options.map((x) => ({ value: x, label: x }));
+  return (
+    <SelectObject
+      options={mapped}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      disabled={disabled}
+    />
+  );
+}
+
+function DateField({
+  label,
+  value,
+  onChange,
+  locale = "en-GB",
+}: {
+  label: string;
+  value: string | null | undefined;
+  onChange: (v: string) => void;
+  locale?: string;
+}) {
+  const pretty = (() => {
+    if (!value) return "—";
+    const d = new Date(value + "T00:00:00");
+    if (Number.isNaN(+d)) return value;
+    return d.toLocaleDateString(locale, { day: "2-digit", month: "2-digit", year: "numeric" });
+  })();
+
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      {label ? <div style={{ fontSize: 12, opacity: 0.7 }}>{label}</div> : null}
+      <input
+        type="date"
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: "100%",
+          height: 36,
+          borderRadius: 8,
+          border: "1px solid var(--input-border)",
+          background: "var(--card)",
+          color: "var(--text)",
+          padding: "0 10px",
+        }}
+        title={pretty}
+      />
+    </div>
+  );
+}
+/* ========= Small UI bits ========= */
 function PillCount({ n }: { n: number }) {
   return (
     <span
@@ -118,15 +279,8 @@ function PillCount({ n }: { n: number }) {
     </span>
   );
 }
-function Panel({
-  title,
-  right,
-  children,
-}: {
-  title: string;
-  right?: React.ReactNode;
-  children: React.ReactNode;
-}) {
+
+function Panel({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div style={{ border: cardBorder, background: "var(--card)", borderRadius: 16, padding: 12 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -137,6 +291,7 @@ function Panel({
     </div>
   );
 }
+
 function EmptyBox({ text }: { text: string }) {
   return (
     <div
@@ -155,16 +310,7 @@ function EmptyBox({ text }: { text: string }) {
   );
 }
 
-/* ============ Filters / Capsules ============ */
-function Capsule({
-  label,
-  summary,
-  children,
-}: {
-  label: string;
-  summary?: string;
-  children: React.ReactNode;
-}) {
+function Capsule({ label, summary, children }: { label: string; summary?: string; children: React.ReactNode }) {
   return (
     <div
       style={{
@@ -187,291 +333,33 @@ function Capsule({
   );
 }
 
-type Option = { value: string; label: string };
+/* ========= Visit IDs helper (مطابق لفكرة SQL) ========= */
+type VisitIdsPair = { original: string[]; tl: string[] };
 
-/* === Object select (TL) === */
-function SelectObject({
-  options,
-  value,
-  onChange,
-  placeholder,
-  disabled,
-}: {
-  options: Option[];
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-}) {
-  const { isArabic } = useLangTheme();
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 10,
-        padding: "10px 12px",
-        borderRadius: 12,
-        border: "1px solid var(--input-border)",
-        background: "var(--card)",
-        overflow: "hidden",
-        opacity: disabled ? 0.6 : 1,
-      }}
-    >
-      <select
-        value={value ?? ""}
-        onChange={(e) => onChange(e.currentTarget.value)}
-        disabled={disabled}
-        style={{
-          width: "100%",
-          height: 24,
-          padding: isArabic ? "0 34px 0 6px" : "0 6px 0 34px",
-          border: "none",
-          outline: "none",
-          background: "transparent",
-          color: "var(--text)",
-          appearance: "none",
-          WebkitAppearance: "none",
-          MozAppearance: "none",
-          fontWeight: 700,
-        }}
-      >
-        <option value="">{placeholder || ""}</option>
-        {options.map((op) => (
-          <option key={op.value} value={op.value}>
-            {op.label}
-          </option>
-        ))}
-      </select>
-      <span
-        aria-hidden
-        style={{
-          position: "absolute",
-          top: 0,
-          bottom: 0,
-          [isArabic ? "left" : "right"]: 10,
-          display: "flex",
-          alignItems: "center",
-          pointerEvents: "none",
-          opacity: 0.8,
-        }}
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </span>
-    </div>
-  );
-}
-
-/* === Single select (Region/City/Market) — أضفت disabled === */
-function SelectSingle({
-  options,
-  value,
-  onChange,
-  placeholder,
-  disabled,
-}: {
-  options: string[];
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-}) {
-  const { isArabic } = useLangTheme();
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 10,
-        padding: "10px 12px",
-        borderRadius: 12,
-        border: "1px solid var(--input-border)",
-        background: "var(--card)",
-        overflow: "hidden",
-        opacity: disabled ? 0.6 : 1,
-      }}
-    >
-      <select
-        value={value ?? ""}
-        onChange={(e) => onChange(e.currentTarget.value)}
-        disabled={disabled}
-        style={{
-          width: "100%",
-          height: 24,
-          padding: isArabic ? "0 34px 0 6px" : "0 6px 0 34px",
-          border: "none",
-          outline: "none",
-          background: "transparent",
-          color: "var(--text)",
-          appearance: "none",
-          WebkitAppearance: "none",
-          MozAppearance: "none",
-          fontWeight: 700,
-        }}
-      >
-        <option value="">{placeholder || ""}</option>
-        {options.map((op) => (
-          <option key={op} value={op}>
-            {op}
-          </option>
-        ))}
-      </select>
-
-      <span
-        aria-hidden
-        style={{
-          position: "absolute",
-          top: 0,
-          bottom: 0,
-          [isArabic ? "left" : "right"]: 10,
-          display: "flex",
-          alignItems: "center",
-          pointerEvents: "none",
-          opacity: 0.8,
-        }}
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </span>
-    </div>
-  );
-}
-
-function DateField({
-  label,
-  value,
-  onChange,
-  locale = "en-GB",
-}: {
-  label: string;
-  value: string | null | undefined;      // 👈 وسّع النوع
-  onChange: (v: string) => void;
-  locale?: string;
-}) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-   const pretty = useMemo(() => {
-    if (!value) return "—";
-    const d = new Date(value + "T00:00:00");
-    if (Number.isNaN(+d)) return value;
-    return d.toLocaleDateString(locale, { day: "2-digit", month: "2-digit", year: "numeric" });
-  }, [value, locale]);
-
-  const openPicker = () => {
-    const el = inputRef.current;
-    if (!el) return;
-    if ("showPicker" in el && typeof (el as HTMLInputElement & { showPicker?: () => void }).showPicker === "function") {
-      (el as HTMLInputElement & { showPicker: () => void }).showPicker();
-    } else {
-      el.click();
-      el.focus();
-    }
-  };
-
-  return (
-    <div style={{ display: "grid", gap: 6 }}>
-      <div style={{ fontSize: 12, color: "var(--muted, #aaa)" }}>{label}</div>
-
-      <div
-        role="button"
-        onClick={openPicker}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " " ? openPicker() : null)}
-        tabIndex={0}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-          padding: "10px 12px",
-          borderRadius: 12,
-          border: "1px solid var(--input-border)",
-          background: "var(--card)",
-          cursor: "pointer",
-          userSelect: "none",
-        }}
-        className="datefield"
-      >
-        <span style={{ fontWeight: 700 }}>{pretty}</span>
-        <span aria-hidden>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ display: "block" }}>
-            <rect x="3" y="5" width="18" height="16" rx="3" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M16 3v4M8 3v4M3 10h18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </span>
-      </div>
-
-      <input
-        ref={inputRef}
-        type="date"
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value)}
-        style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 0, height: 0 }}
-      />
-    </div>
-  );
-}
-
-/* ========= Page ========= */
+/* ========= Main Page ========= */
 export default function Page() {
   const { isArabic: ar } = useLangTheme();
   const [loading, setLoading] = useState(false);
-  const snapKey = (s: SnapshotRow) => `${s.id}__${s.snapshot_date}`;
 
-  /* ===== user_settings masks ===== */
   const [userSettings, setUserSettings] = useState<
     Pick<UserSettingsRow, "default_region" | "default_city" | "allowed_markets" | "Team_leader"> | null
   >(null);
+  const [showTLsInUsers, setShowTLsInUsers] = useState(true);
 
-  useEffect(() => {
-    (async () => {
-      const { data: authRes } = await supabase.auth.getUser();
-      const authId = authRes?.user?.id || null;
-      if (!authId) return;
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [markets, setMarkets] = useState<MarketRow[]>([]);
+  const [selectedUser, setSelectedUser] = useState<UUID | "">("");
+  const [selectedChains, setSelectedChains] = useState<string[]>([]);
+  const [selectedBranches, setSelectedBranches] = useState<UUID[]>([]);
+  const [snapshots, setSnapshots] = useState<SnapshotRow[]>([]);
+  const [selectedSnapshotIds, setSelectedSnapshotIds] = useState<string[]>([]);
+  const [incompleteCount, setIncompleteCount] = useState(0);
+  const [filters, setFilters] = useState({ region: "", city: "", market: "" });
 
-     type UserIdRow = { id: string };
+  // [!!!] تم إصلاح السطر التالي
+  const [visitIdsPair, setVisitIdsPair] = useState<VisitIdsPair>({ original: [], tl: [] });
 
-const { data: u } = await supabase
-  .from("Users")
-  .select("id")
-  .eq("auth_user_id", authId)
-  .returns<UserIdRow[]>()   // select بدون single = array
-  .maybeSingle();           // بعد maybeSingle => UserIdRow | null
-
-
-      if (!u) return;
-
-     type UserSettingsPick = {
-  default_region: string[] | null;
-  default_city: string[] | null;
-  allowed_markets: string[] | null;
-  Team_leader: string[] | null;
-};
-
-const { data: st } = await supabase
-  .from("user_settings")
-  .select("default_region, default_city, allowed_markets, Team_leader")
-  .eq("user_id", u.id)
-  .maybeSingle<UserSettingsPick>(); // ← صف واحد مtyped صح
-
-if (st) {
-  setUserSettings({
-    default_region: st.default_region,
-    default_city: st.default_city,
-    allowed_markets: st.allowed_markets,
-    Team_leader: st.Team_leader,
-  });
-}
-    })();
-  }, []);
+  const { clientId, tls, tlDisabled, filters: gFilters, updateFilter } = useAdminCascadingFilters();
 
   const permRegions = useMemo<Set<string> | null>(() => {
     const arr = userSettings?.default_region?.filter(Boolean) ?? [];
@@ -492,96 +380,131 @@ if (st) {
   const lockedCity = !!permCities?.size;
   const lockedStore = !!permStores?.size;
 
-  // فلاتر (Single-select) مثل الداشبورد
-  const [filters, setFilters] = useState({
-    region: "" as string,
-    city: "" as string,
-    market: "" as string, // store/chain
-  });
-
-  // الهُوك الموحد (from/to/TL)
-  const {
-    clientId,
-    tls,
-    tlDisabled,
-    filters: gFilters,     // { from, to, team_leader_id }
-    updateFilter,          // setter لتحديث from/to/team_leader_id
-  } = useAdminCascadingFilters();
-
-  // أقفال TL من user_settings
   const permTLs = useMemo<Set<UUID> | null>(() => {
     const arr = userSettings?.Team_leader?.filter(Boolean) ?? [];
     return arr.length ? new Set(arr) : null;
   }, [userSettings?.Team_leader]);
   const lockedTL = !!permTLs?.size;
 
-  // طبّق قفل TL على قيمة الفلتر
   useEffect(() => {
     if (lockedTL && userSettings?.Team_leader?.[0]) {
-      updateFilter("team_leader_id", userSettings.Team_leader[0]); // إجبار القيمة
+      updateFilter("team_leader_id", userSettings.Team_leader[0]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lockedTL, userSettings?.Team_leader?.[0]]);
+  }, [lockedTL, userSettings?.Team_leader, updateFilter]);
 
-  // users/markets
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [markets, setMarkets] = useState<MarketRow[]>([]);
+  const selectedUserRole = useMemo(() => {
+    const role = users.find((u) => u.id === selectedUser)?.role ?? null;
+    return normalizeRole(role);
+  }, [selectedUser, users]);
 
-  // options (تُعاد حسابها ديناميكيًا حسب الفلاتر + الماسكات)
+  const { scope } = useScopeLock({ selectedUserId: selectedUser || undefined });
+  const scopeMarketIds = useMemo(() => scope?.market_ids ?? [], [scope?.market_ids]);
+
   const [regionsOpts, setRegionsOpts] = useState<string[]>([]);
   const [citiesOpts, setCitiesOpts] = useState<string[]>([]);
   const [marketsOpts, setMarketsOpts] = useState<string[]>([]);
-
-  // selections
-  const [selectedUsers, setSelectedUsers] = useState<UUID[]>([]);
-  const [selectedChains, setSelectedChains] = useState<string[]>([]);
-  const [selectedBranches, setSelectedBranches] = useState<UUID[]>([]);
-  const [snapshots, setSnapshots] = useState<SnapshotRow[]>([]);
-  const [selectedSnapshotIds, setSelectedSnapshotIds] = useState<string[]>([]);
-  const [incompleteCount, setIncompleteCount] = useState(0);
 
   const FIRST_STEP: StepKey = useMemo(() => Object.keys(VISIT_STEPS)[0] as StepKey, []);
   const [currentStep, setCurrentStep] = useState<StepKey>(FIRST_STEP);
   const [availableSteps, setAvailableSteps] = useState<StepKey[]>([]);
   const [endReasonViewer, setEndReasonViewer] = useState({ open: false, reasonEn: "", reasonAr: "", photo: "" });
 
-  /* ====== Users (multi-select) ====== */
+  // تحميل إعدادات المستخدم
+  useEffect(() => {
+    (async () => {
+      const { data: authRes } = await supabase.auth.getUser();
+      const authId = authRes?.user?.id || null;
+      if (!authId) return;
+
+      type UserIdRow = { id: string };
+      const { data: u } = await supabase
+        .from("Users")
+        .select("id")
+        .eq("auth_user_id", authId)
+        .returns<UserIdRow[]>()
+        .maybeSingle();
+      if (!u) return;
+
+      type UserSettingsPick = {
+        default_region: string[] | null;
+        default_city: string[] | null;
+        allowed_markets: string[] | null;
+        Team_leader: string[] | null;
+      };
+
+      const { data: st } = await supabase
+        .from("user_settings")
+        .select("default_region, default_city, allowed_markets, Team_leader")
+        .eq("user_id", u.id)
+        .maybeSingle<UserSettingsPick>();
+
+      if (st) {
+        setUserSettings({
+          default_region: st.default_region,
+          default_city: st.default_city,
+          allowed_markets: st.allowed_markets,
+          Team_leader: st.Team_leader as UUID[] | null,
+        });
+      }
+    })();
+  }, []);
+
+  // تحميل المستخدمين
   useEffect(() => {
     setMarkets([]);
-    setSelectedChains([]);
-    setSelectedBranches([]);
     setSnapshots([]);
-    setSelectedSnapshotIds([]);
-
+    setSelectedBranches([]);
     if (!clientId || !gFilters.team_leader_id) return;
 
     (async () => {
       setLoading(true);
-      const { data } = await supabase
+
+      type ClientUserJoin = { user_id: UUID; Users: UserRow };
+      const { data: cu } = await supabase
         .from("client_users")
-        .select("user_id, Users!inner(id, name, username, arabic_name, role, team_leader_id)")
+        .select("user_id, Users!inner(id, auth_user_id, name, username, arabic_name, role, team_leader_id)")
         .eq("client_id", clientId)
-        .eq("is_active", true);
+        .eq("is_active", true)
+        .returns<ClientUserJoin[]>();
 
-      const rows = (data ?? []) as unknown as Array<{ user_id: UUID; Users: UserRow }>;
-      let list = rows.map((r) => r.Users).filter((u) => !isAdminRole(u.role) && !isTLRole(u.role));
+      const base = (cu ?? []).map((r) => r.Users);
 
-      if (gFilters.team_leader_id !== "ALL") {
-        list = list.filter((u) => u.team_leader_id === gFilters.team_leader_id);
+      const leaderIds = Array.from(new Set(base.map((u) => u.team_leader_id).filter(Boolean))) as string[];
+      let leaders: UserRow[] = [];
+      if (leaderIds.length) {
+        const { data: ls } = await supabase
+          .from("Users")
+          .select("id, auth_user_id, name, username, arabic_name, role, team_leader_id")
+          .in("id", leaderIds)
+          .returns<UserRow[]>();
+        leaders = (ls ?? []).filter((u) => isTLRole(u.role));
       }
 
-      list.sort((a, b) => (a.username || "").localeCompare(b.username || "", "ar"));
-      setUsers(list);
+      let list = base;
+      if (gFilters.team_leader_id !== "ALL") {
+        const sel = gFilters.team_leader_id;
+        list = base.filter((u) => u.team_leader_id === sel);
+        const { data: tlRow } = await supabase
+          .from("Users")
+          .select("id, auth_user_id, name, username, arabic_name, role, team_leader_id")
+          .eq("id", sel)
+          .maybeSingle<UserRow>();
+        if (tlRow) leaders = [tlRow];
+      }
 
-      setSelectedUsers((prev) => {
-        const allowed = new Set(list.map((u) => u.id));
-        return prev.filter((id) => allowed.has(id));
-      });
+      const mix = showTLsInUsers ? [...list, ...leaders] : list;
+      const all = mix.filter((u) => !isAdminRole(u.role));
+      const uniq = Array.from(new Map(all.map((u) => [u.id, u])).values()).sort((a, b) =>
+        (a.username || "").localeCompare(b.username || "", "ar")
+      );
+
+      setUsers(uniq);
+      setSelectedUser((prev) => (prev && uniq.some((u) => u.id === prev) ? prev : uniq[0]?.id ?? ""));
       setLoading(false);
     })();
-  }, [clientId, gFilters.team_leader_id]);
+  }, [clientId, gFilters.team_leader_id, showTLsInUsers]);
 
-  /* ====== Markets for selectedUsers ====== */
+  // تحميل الأسواق للفيوزر المختار
   type MarketsSelect = {
     id: string;
     region: string | null;
@@ -596,18 +519,18 @@ if (st) {
     setSelectedBranches([]);
     setSnapshots([]);
     setSelectedSnapshotIds([]);
-
-    if (selectedUsers.length === 0 || !clientId) return;
+    if (!selectedUser || !clientId) return;
 
     const isUUID = (x: unknown): x is string => typeof x === "string" && x.length > 0;
 
     (async () => {
       setLoading(true);
+
       const vmRes = await supabase
         .from("Visits")
         .select("market_id, user_id")
         .eq("client_id", clientId)
-        .in("user_id", selectedUsers)
+        .eq("user_id", selectedUser)
         .not("market_id", "is", null);
 
       let marketIds = Array.from(new Set((vmRes.data ?? []).map((r) => r.market_id as unknown).filter(isUUID)));
@@ -616,7 +539,7 @@ if (st) {
         .from("DailyVisitSnapshots")
         .select("market_id")
         .eq("client_id", clientId)
-        .in("user_id", selectedUsers)
+        .in("user_id", selectedUser ? [selectedUser] : [])
         .not("market_id", "is", null);
 
       if (!snapMarketsRes.error) {
@@ -634,10 +557,13 @@ if (st) {
         return;
       }
 
-      const { data } = await supabase.from("Markets").select("id, region, city, store, branch").in("id", marketIds);
-      const rows = (data ?? []) as MarketsSelect[];
+      const { data } = await supabase
+        .from("Markets")
+        .select("id, region, city, store, branch")
+        .in("id", marketIds)
+        .returns<MarketsSelect[]>();
 
-      const ms: MarketRow[] = rows.map((r) => ({
+      let ms: MarketRow[] = (data ?? []).map((r) => ({
         id: String(r.id),
         name: r.branch?.trim() || r.store?.trim() || "—",
         region: r.region,
@@ -646,15 +572,19 @@ if (st) {
         branches: r.branch,
       }));
 
+      if (scopeMarketIds.length) {
+        const allowed = new Set(scopeMarketIds.map(String));
+        ms = ms.filter((m) => allowed.has(m.id));
+      }
+
       setMarkets(ms);
       setLoading(false);
     })();
-  }, [selectedUsers, clientId]);
+  }, [selectedUser, clientId, scopeMarketIds]);
 
-  /* ====== marketPasses + إعادة حساب الخيارات ====== */
+  /* ====== فلاتر المنطقة/المدينة/السوق ====== */
   const marketPasses = useMemo(
     () => (m: MarketRow, omitKey?: "region" | "city" | "market") => {
-      // ماسكات الصلاحيات
       if (permRegions && m.region && !permRegions.has(m.region)) return false;
       if (permCities && m.city && !permCities.has(m.city)) return false;
       const storeName = (m.store || m.name || "").trim();
@@ -675,7 +605,6 @@ if (st) {
     [filters.region, filters.city, filters.market, permRegions, permCities, permStores]
   );
 
-  // إعادة حساب القوائم المنسدلة + تنظيف الاختيارات غير الصالحة (مع احترام الأقفال)
   useEffect(() => {
     const nextRegions = new Set<string>();
     const nextCities = new Set<string>();
@@ -688,7 +617,6 @@ if (st) {
       if (marketPasses(m, "market") && nm) nextStores.add(nm);
     }
 
-    // قيّد القوائم بالمسموح لو فيه قفل
     const lockList = <T,>(src: T[], allowed: Set<T> | null) => (allowed ? src.filter((x) => allowed.has(x)) : src);
 
     const rArr = lockList(Array.from(nextRegions).sort((a, b) => a.localeCompare(b, "ar")), permRegions);
@@ -701,18 +629,17 @@ if (st) {
 
     setFilters((prev) => {
       const next = { ...prev };
-      if (next.region && !rArr.includes(next.region)) next.region = lockedRegion ? userSettings?.default_region?.[0] ?? "" : "";
-      if (next.city && !cArr.includes(next.city)) next.city = lockedCity ? userSettings?.default_city?.[0] ?? "" : "";
-      if (next.market && !sArr.includes(next.market)) next.market = lockedStore ? userSettings?.allowed_markets?.[0] ?? "" : "";
+      if (next.region && !rArr.includes(next.region))
+        next.region = lockedRegion && userSettings?.default_region?.[0] ? userSettings.default_region[0] : "";
+      if (next.city && !cArr.includes(next.city))
+        next.city = lockedCity && userSettings?.default_city?.[0] ? userSettings.default_city[0] : "";
+      if (next.market && !sArr.includes(next.market))
+        next.market = lockedStore && userSettings?.allowed_markets?.[0] ? userSettings.allowed_markets[0] : "";
       return next;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [markets, marketPasses, lockedRegion, lockedCity, lockedStore]);
+  }, [markets, marketPasses, lockedRegion, lockedCity, lockedStore, userSettings, permRegions, permCities, permStores]);
 
-  /* ====== فلترة الأسواق وفق الاختيارات ====== */
-  const filteredMarkets = useMemo(() => {
-    return markets.filter((m) => marketPasses(m));
-  }, [markets, marketPasses]);
+  const filteredMarkets = useMemo(() => markets.filter((m) => marketPasses(m)), [markets, marketPasses]);
 
   const chains = useMemo(() => {
     const S = new Set<string>();
@@ -741,163 +668,345 @@ if (st) {
       .sort((a, b) => a.label.localeCompare(b.label, "ar"));
   }, [filteredMarkets, selectedChains]);
 
-  // اربط فلاتر Region/City/Market بالاختيارات الفعلية تلقائيًا (وتوليد الفروع)
   useEffect(() => {
     const chain = filters.market?.trim() || "";
     setSelectedChains(chain ? [chain] : []);
 
-    const base = chain
-      ? filteredMarkets.filter((m) => ( (m.store || m.name || "").trim() === chain))
-      : filteredMarkets;
+    const allowedIds = new Set(
+      (chain ? filteredMarkets.filter((m) => (m.store || m.name || "").trim() === chain) : filteredMarkets).map((m) => m.id)
+    );
 
-    const nextBranchIds = base.map((m) => m.id);
-    setSelectedBranches(nextBranchIds);
+    setSelectedBranches((prev) => prev.filter((id) => allowedIds.has(id)));
 
-    // تنظيف النتائج السابقة
     setSnapshots([]);
     setSelectedSnapshotIds([]);
     setIncompleteCount(0);
   }, [filters.region, filters.city, filters.market, filteredMarkets]);
 
-/* ====== Snapshots via all_visits_combined ====== */
-useEffect(() => {
-  setSnapshots([]);
-  setSelectedSnapshotIds([]);
-  setIncompleteCount(0);
-
-  if (!clientId || selectedUsers.length === 0 || selectedBranches.length === 0) return;
-
-  (async () => {
-    setLoading(true);
-
-    const selectCols = `
-      id:visit_id,
-      tl_visit_id,
-      user_id,
-      market_id,
-      client_id,
-      snapshot_date,
-      status,
-      started_at,
-      finished_at,
-      end_reason_en,
-      end_reason_ar,
-      end_visit_photo
-    `;
-
-    try {
-      let query = supabase
-        .from("all_visits_combined")
-        .select(selectCols)
-        .eq("client_id", clientId)
-        .in("user_id", selectedUsers)
-        .in("market_id", selectedBranches)
-        .not("status", "is", null);
-
-      if (gFilters.from) query = query.gte("snapshot_date", gFilters.from);
-      if (gFilters.to)   query = query.lte("snapshot_date", gFilters.to);
-
-      const { data } = await query
-        .returns<AllVisitsCombinedRow[]>()      // ← كده استخدمنا النوع
-        .order("started_at", { ascending: false });
-
-      const rows = data ?? [];
-
-      const collected: SnapshotRow[] = rows.map((item) => ({
-        ...item,
-        original_visit_id: (item.id ?? item.tl_visit_id) as UUID | null,
-        coordinator_visit_id: null,             // لو أضفت العمود لاحقًا عبّيه هنا
-        id: (item.id ?? item.tl_visit_id) as UUID,
-      }));
-
-      const incomplete = collected.filter(
-        (s) => s.status !== "finished" && s.status !== "ended"
-      ).length;
-
-      setIncompleteCount(incomplete);
-      setSnapshots(collected);
-    } catch (e) {
-      const err = e as PostgrestError;
-      console.error("Error fetching from all_visits_combined:", {
-        message: err.message,
-        details: err.details,
-        hint: err.hint,
-        code: err.code,
-      });
-    } finally {
-      setLoading(false);
-    }
-  })();
-}, [clientId, gFilters.from, gFilters.to, selectedUsers, selectedBranches]);
-
-
-
-  /* ====== visit steps availability ====== */
-  const { activeVisitId, activeDate } = useMemo(() => {
-  if (selectedSnapshotIds.length === 0) return { activeVisitId: null, activeDate: null };
-  const selKey = selectedSnapshotIds[0];
-  const s = snapshots.find((x) => snapKey(x) === selKey);
-  if (!s) return { activeVisitId: null, activeDate: null };
-  return { activeVisitId: s.original_visit_id || s.tl_visit_id || null, activeDate: s.snapshot_date };
-}, [selectedSnapshotIds, snapshots]);
-
+  // جلب الزيارات للفروع المختارة
   useEffect(() => {
-    if (!activeVisitId) {
-      setAvailableSteps([]);
-      return;
-    }
-    let alive = true;
+    setSnapshots([]);
+    setSelectedSnapshotIds([]);
+    setIncompleteCount(0);
+    if (!clientId || !selectedUser || selectedBranches.length === 0) return;
+
     (async () => {
-      const checks = await Promise.all(
-        (Object.keys(VISIT_STEPS) as StepKey[]).map(async (k) => {
-          const cfg = VISIT_STEPS[k];
-          const { count, error } = await supabase
-            .from(cfg.table)
-            .select("id", { count: "exact", head: true })
-            .eq("visit_id", activeVisitId);
-          if (error) return [k, 0] as const;
-          return [k, count || 0] as const;
-        })
-      );
-      if (!alive) return;
-      const keys = checks.filter(([, c]) => c > 0).map(([k]) => k as StepKey);
-      setAvailableSteps(keys);
-      setCurrentStep((prev) => (keys.includes(prev) ? prev : keys[0] ?? FIRST_STEP));
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [activeVisitId, FIRST_STEP]);
+      setLoading(true);
 
-  useEffect(() => {
-    setCurrentStep(FIRST_STEP);
-  }, [FIRST_STEP, selectedSnapshotIds]);
+      const selectCols = `
+        id:visit_id,
+        tl_visit_id,
+        user_id,
+        market_id,
+        client_id,
+        snapshot_date,
+        status,
+        started_at,
+        finished_at,
+        end_reason_en,
+        end_reason_ar,
+        end_visit_photo,
+        source_table,
+        jp_state
+      `;
 
-  /* ====== counts + visible list ====== */
-  const { completedCount, pendingCount, visibleSnapshots } = useMemo(() => {
-  const completed = snapshots.filter((s) => s.status === "finished");
-  const ended = snapshots.filter((s) => s.status === "ended");
-  const visible = [...completed, ...ended].sort(
-    (a, b) =>
-      (b.started_at ? +new Date(b.started_at) : 0) -
-      (a.started_at ? +new Date(a.started_at) : 0)
-  );
+      try {
+        let query = supabase
+          .from("all_visits_combined")
+          .select(selectCols)
+          .eq("client_id", clientId)
+          .in("user_id", selectedUser ? [selectedUser] : [])
+          .in("market_id", selectedBranches)
+          .not("status", "is", null);
 
-  // ❌ كان: uniqueVisible = remove duplicates by id
-  // ✅ اعرض الكل
-  const uniqueVisible = visible;
+        // [!!!] تعديل: البحث بـ started_at كما طلبت
+        if (gFilters.from) {
+          const { fromISO } = toKsaDayRange(gFilters.from);
+          query = query.gte("started_at", fromISO);
+        }
+        if (gFilters.to) {
+          // نستخدم toKsaDayRange للحصول على نهاية اليوم (بداية اليوم التالي)
+          const { toISO } = toKsaDayRange(gFilters.to); 
+          query = query.lt("started_at", toISO);
+        }
 
-  const pending = Math.max(0, incompleteCount - ended.length);
+        const { data } = await query.returns<AllVisitsCombinedRow[]>().order("started_at", { ascending: false });
+
+        const rows = data ?? [];
+
+        const byKey = new Map<string, AllVisitsCombinedRow>();
+
+        const score = (x: AllVisitsCombinedRow) => {
+          const statusBoost = x.status === "finished" || x.status === "ended" ? 2 : 1;
+          const f = x.finished_at ? Date.parse(x.finished_at) : 0;
+          const s = x.started_at ? Date.parse(x.started_at) : 0;
+          return statusBoost * 1_000_000_000_000 + Math.max(f, s);
+        };
+
+        for (const r of rows) {
+          const source = r.source_table ?? (r.tl_visit_id ? "TLVisits" : "Visits");
+          const day = (r.snapshot_date || "").slice(0, 10);
+          const key = `${source}|${r.user_id}|${r.market_id}|${day}`;
+          const prev = byKey.get(key);
+          if (!prev) {
+            byKey.set(key, r);
+          } else if (score(r) > score(prev)) {
+            byKey.set(key, r);
+          }
+        }
+
+        const deduped = Array.from(byKey.values());
+
+        const collected: SnapshotRow[] = deduped.map((item) => {
+  const originalId = (item.id as UUID | null) ?? null;          // ← ده دائمًا visit_id من الـ view
+  const tlId       = (item.tl_visit_id as UUID | null) ?? null; // ← TL visit لو موجود
 
   return {
-    completedCount: completed.length,
-    pendingCount: pending,
-    visibleSnapshots: uniqueVisible,
+    ...item,
+    // خليه ثابت = visit_id علشان كل الاختيارات تعتمد عليه
+    id: originalId as UUID,
+    original_visit_id: originalId,  // ← لا تخليه null حتى لو المصدر TLVisits
+    tl_visit_id: tlId,              // ← TL ID لو موجود
+    coordinator_visit_id: null,
+    jp_state: item.jp_state,
   };
-}, [snapshots, incompleteCount]);
+});
+
+        const incomplete = collected.filter((s) => s.status !== "finished" && s.status !== "ended").length;
+
+        setIncompleteCount(incomplete);
+        setSnapshots(collected);
+      } catch (e) {
+        const err = e as PostgrestError;
+        console.error("Error fetching from all_visits_combined:", {
+          message: err.message,
+          details: err.details,
+          hint: err.hint,
+          code: err.code,
+        });
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [clientId, gFilters.from, gFilters.to, selectedUser, selectedBranches]);
+
+ // الاختيار الحالي + اليوم
+  const activeSelection = useMemo(() => {
+    if (selectedSnapshotIds.length === 0) return { s: null as SnapshotRow | null };
+    const sid = selectedSnapshotIds[0];
+    const s = snapshots.find((x) => x.id + "__" + x.snapshot_date === sid) || null;
+    return { s };
+  }, [selectedSnapshotIds, snapshots]);
+
+  // [جديد] احصل على حالة الزيارة من السناب شوت المختار
+  const activeJpState: string | null = useMemo(() => {
+    // نستخدم jp_state أولاً، وإذا لم يوجد، نستخدم status
+    return activeSelection.s?.jp_state ?? activeSelection.s?.status ?? null;
+  }, [activeSelection.s]);
+  // [!!!] ⬇️⬇️ الكود الجديد المضاف ⬇️⬇️
+  // [!!!] منطق جديد: جلب الـ IDs مباشرة من الـ Snapshot المختار
+ useEffect(() => {
+  const s = activeSelection.s;
+  if (!s) { setVisitIdsPair({ original: [], tl: [] }); return; }
+
+  const originals = s.original_visit_id ? [s.original_visit_id] : [];
+  const tls = s.tl_visit_id ? [s.tl_visit_id] : [];
+
+  // لو عندنا original خلاص
+  if (originals.length) {
+    setVisitIdsPair({ original: originals, tl: tls });
+    return;
+  }
+
+  // 🔁 Fallback: هات visit_id من Visits لنفس (اليوم + الفرع) ولـ "المستخدم المختار"
+  (async () => {
+  const day = (s.snapshot_date || "").slice(0, 10);
+  if (!day) {
+    setVisitIdsPair({ original: [], tl: tls });
+    return;
+  }
+
+  const { fromISO, toISO } = toKsaDayRange(day);
+  const authId = users.find(u => u.id === selectedUser)?.auth_user_id || null;
+
+  // 🔹 فلترة صارمة: نفس الفرع + نفس المستخدم + نفس اليوم
+  let query = supabase
+    .from("all_visits_combined")
+    .select("id:visit_id")
+    .eq("market_id", s.market_id)
+    .eq("source_table", "Visits")
+    .gte("started_at", fromISO)
+    .lt("started_at", toISO);
+
+  // فلترة المستخدم حسب id أو auth_user_id
+  if (authId) {
+    query = query.or(`user_id.eq.${selectedUser},user_id.eq.${authId}`);
+  } else {
+    query = query.eq("user_id", selectedUser);
+  }
+
+  const { data, error } = await query
+    .order("started_at", { ascending: false })
+    .limit(1);
+
+  const vid = (data?.[0]?.id as string) || "";
+  setVisitIdsPair({ original: vid ? [vid] : [], tl: tls });
+
+  if (!vid && error) {
+    console.warn("[fallback visit_id from Visits] error:", error);
+  }
+})();
+
+}, [activeSelection.s, selectedUser, users]);
 
 
-  /* ========= i18n ========= */
+  // ✅ استبدله بهذا السطر
+
+// [!!!] هذا هو الإصلاح النهائي
+ const activeDate: string | null = useMemo(() => {
+  const s = activeSelection.s;
+  
+  // المصدر الأساسي للتاريخ هو 'started_at' (الذي تضغط عليه)
+  // إذا لم يوجد، نستخدم 'snapshot_date' كحل احتياطي
+  const dateSource = s?.started_at ?? s?.snapshot_date ?? null;
+  
+  if (!dateSource) {
+   return null;
+  }
+  
+  try {
+   // s.started_at هو تايمستامب كامل: "2025-10-15T14:19:05+00:00"
+   // نحتاج فقط لجزء التاريخ "2025-10-15"
+   // .substring(0, 10) هي الطريقة الأضمن لقطع التاريخ (YYYY-MM-DD)
+   return dateSource.substring(0, 10);
+  } catch (e) {
+   console.error("Error parsing activeDate:", e);
+   return null; // إرجاع null في حالة حدوث خطأ
+  }
+ }, [activeSelection.s]);
+const visitIdsForStep = useMemo(() => {
+  const role = selectedUserRole;
+  const ids = role === "team_leader" ? visitIdsPair.tl : visitIdsPair.original;
+
+  // 🔹 خليك دايمًا تختار زيارة واحدة بس (من نفس snapshot المختار)
+  // لأن كل snapshot هو combo واحد من visit_id + date
+  return ids.length > 0 ? [ids[0]] : [];
+}, [selectedUserRole, visitIdsPair]);
+
+
+ const [disabledSteps, setDisabledSteps] = useState<Set<StepKey>>(new Set());
+const normKey = (s: string) => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); 
+// يشيل أي شيء غير حروف/أرقام (مسافات، أندرسكور، شرطات...)
+
+useEffect(() => {
+  let alive = true;
+  (async () => {
+    if (!clientId) {
+      if (alive) setDisabledSteps(new Set());
+      return;
+    }
+
+    type CFRow = { feature_key: string; is_enabled: boolean | null };
+    const { data, error } = await supabase
+      .from("ClientFeatures")
+      .select("feature_key, is_enabled")
+      .eq("client_id", clientId);
+
+    if (!alive) return;
+
+    if (error) {
+      console.warn("[ClientFeatures] fetch error:", error);
+      setDisabledSteps(new Set());
+      return;
+    }
+
+    // ابني خريطة المزايا بعد التطبيع
+    const enabledMap = new Map<string, boolean>();
+    for (const r of (data ?? []) as CFRow[]) {
+      enabledMap.set(normKey(r.feature_key), !!r.is_enabled);
+    }
+
+    // اعتبر الميزة ON لو مفيش صف لها (افتراضيًا مفعّلة)
+    const isFeatureOn = (key: string) => {
+      const k = normKey(key);
+      return enabledMap.has(k) ? enabledMap.get(k) === true : true;
+    };
+
+    // ابنِ مجموعة الخطوات المعطّلة
+    const disabled = new Set<StepKey>();
+    for (const [featureKey, steps] of Object.entries(FEATURE_TO_STEPS)) {
+      if (!isFeatureOn(featureKey)) {
+        steps.forEach((s) => disabled.add(s));
+      }
+    }
+
+    // لا تلمس الخطوات الدائمة
+    ALWAYS_ON_STEPS.forEach((s) => disabled.delete(s));
+
+    setDisabledSteps(disabled);
+    console.debug("[ClientFeatures] disabledSteps:", disabled);
+  })();
+
+  return () => { alive = false; };
+}, [clientId]);
+
+
+  // ⬇️ ضع هذا بدل الكود الحالي (الذي فيه .eq("id", userId))
+// ⬇️ هذا هو الـ useEffect الذي يجب إصلاحه
+useEffect(() => {
+  let alive = true;
+  (async () => {
+    if (!selectedUser) return; // مهم: تجنّب الاستعلام لو مفيش مستخدم مختار
+    
+    // 🔽 تأكد أن جملة select تطلب الأعمدة الموجودة فعلاً
+    const { data, error } = await supabase
+      .from("Users")
+      .select("name, arabic_name, username") // ⬅️ استخدم هذه الأعمدة
+      .eq("id", selectedUser) // ⬅️ بدل userId بـ selectedUser
+      .maybeSingle();
+
+    if (!alive) return;
+    if (error) {
+      console.warn("[Users fetch]", error);
+      return;
+    }
+    // TODO: استخدم البيانات زي ما تحب (مثلاً setState لعرض الاسم)
+    console.debug("[Users fetch] selectedUser name:", data);
+  })();
+  return () => {
+    alive = false;
+  };
+}, [selectedUser]); // ⬅️ هذا الـ hook الذي يعتمد على [selectedUser]
+
+
+  const isStepDisabledByFeatures = useCallback(
+  (step: StepKey) => {
+    if (ALWAYS_ON_STEPS.includes(step)) return false;
+    return disabledSteps.has(step);
+  },
+  [disabledSteps]
+);
+
+useEffect(() => {
+  // لو مفيش مستخدم أو الدور لسه unknown؛ متعملش حاجة علشان تمنع الوميض
+  if (!selectedUser || selectedUserRole === "unknown") return;
+
+  // 1) خطوات الدور فقط
+  const roleStepsRaw = ROLE_STEPS[selectedUserRole] ?? [];
+
+  // 2) فلترة حسب ClientFeatures
+  const finalKeys = roleStepsRaw.filter((k) => !isStepDisabledByFeatures(k));
+
+  // 3) حدّث القائمة
+  setAvailableSteps(finalKeys);
+
+  // 4) حدّث currentStep بدون الاعتماد على قيمته الحالية خارجياً (functional update)
+  setCurrentStep(prev => {
+    if (finalKeys.length === 0) return prev;                     // لو مافيش خطوات، سيب القديم
+    return finalKeys.includes(prev) ? prev : finalKeys[0];       // لو القديم مش موجود، اختار أول واحدة
+  });
+}, [selectedUser, selectedUserRole, isStepDisabledByFeatures]);
+
   const t = useMemo(
     () => ({
       back: ar ? "رجوع" : "Back",
@@ -930,18 +1039,24 @@ useEffect(() => {
     [ar]
   );
 
-  // فلترة قائمة TLs بالمسموح
-  const visibleTLs = useMemo(
-    () => (permTLs ? tls.filter((tl) => permTLs.has(tl.id)) : tls),
-    [tls, permTLs]
-  );
+  const visibleTLs = useMemo(() => (permTLs ? tls.filter((tl) => permTLs.has(tl.id)) : tls), [tls, permTLs]);
 
-  // حالة تعطيل TL
   const tlSelectDisabled = tlDisabled || lockedTL || visibleTLs.length === 0;
 
+  const { completedCount, pendingCount, visibleSnapshots } = useMemo(() => {
+const completed = snapshots.filter((s) => s.status === "finished");
+const ended = snapshots.filter((s) => s.status === "ended");
+const visible = [...completed, ...ended].sort(
+(a, b) => (b.started_at ? +new Date(b.started_at) : 0) - (a.started_at ? +new Date(a.started_at) : 0)
+);
+    
+    // [!!!] هذا هو الإصلاح
+const pending = incompleteCount; // ⬅️ تم التعديل هنا
+    
+return { completedCount: completed.length, pendingCount: pending, visibleSnapshots: visible };
+}, [snapshots, incompleteCount]);
   return (
     <div style={{ maxWidth: 1400, margin: "0 auto", padding: 16, color: "var(--text)" }}>
-      {/* Loading overlay */}
       {loading && (
         <div
           style={{
@@ -978,14 +1093,11 @@ useEffect(() => {
                 animation: "rt 0.9s linear infinite",
               }}
             />
-            <div style={{ textAlign: "center", color: "var(--text)" }}>
-              {ar ? "جاري التحميل..." : "Loading..."}
-            </div>
+            <div style={{ textAlign: "center", color: "var(--text)" }}>{ar ? "جاري التحميل..." : "Loading..."}</div>
           </div>
         </div>
       )}
 
-      {/* Filters */}
       <div
         style={{
           position: "sticky",
@@ -1000,23 +1112,12 @@ useEffect(() => {
       >
         <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(6, minmax(0, 1fr))" }}>
           <Capsule label={ar ? "من" : "From"}>
-  <DateField
-    label=""
-    value={gFilters.from ?? ""}   // 👈 هنا
-    onChange={(v) => updateFilter("from", v)}
-    locale={ar ? "ar-EG" : "en-GB"}
-  />
-</Capsule>
+            <DateField label="" value={gFilters.from ?? ""} onChange={(v) => updateFilter("from", v)} locale={ar ? "ar-EG" : "en-GB"} />
+          </Capsule>
 
-<Capsule label={ar ? "إلى" : "To"}>
-  <DateField
-    label=""
-    value={gFilters.to ?? ""}     // 👈 وهنا
-    onChange={(v) => updateFilter("to", v)}
-    locale={ar ? "ar-EG" : "en-GB"}
-  />
-</Capsule>
-
+          <Capsule label={ar ? "إلى" : "To"}>
+            <DateField label="" value={gFilters.to ?? ""} onChange={(v) => updateFilter("to", v)} locale={ar ? "ar-EG" : "en-GB"} />
+          </Capsule>
 
           <Capsule label={t.region} summary={filters.region || (ar ? "الكل" : "All")}>
             <SelectSingle
@@ -1024,7 +1125,7 @@ useEffect(() => {
               value={filters.region}
               placeholder={t.allRegions}
               onChange={(v) => {
-                if (lockedRegion) return; // تجاهل لو مقفول
+                if (lockedRegion) return;
                 setFilters((s) => ({ ...s, region: v, city: "", market: "" }));
               }}
               disabled={lockedRegion}
@@ -1057,7 +1158,6 @@ useEffect(() => {
             />
           </Capsule>
 
-          {/* Team Leader quick toggle */}
           <Capsule label={t.tls} summary={tlSelectDisabled ? (ar ? "غير متاح" : "N/A") : undefined}>
             <SelectObject
               options={[
@@ -1067,11 +1167,7 @@ useEffect(() => {
                   label: (ar ? u.arabic_name : u.name) || "—",
                 })),
               ]}
-              value={
-                lockedTL && userSettings?.Team_leader?.[0]
-                  ? userSettings.Team_leader[0]
-                  : (gFilters.team_leader_id || (tlDisabled ? "" : "ALL"))
-              }
+              value={lockedTL && userSettings?.Team_leader?.[0] ? userSettings.Team_leader[0] : gFilters.team_leader_id || (tlDisabled ? "" : "ALL")}
               onChange={(v) => {
                 if (lockedTL) return;
                 updateFilter("team_leader_id", v || (tlDisabled ? "" : "ALL"));
@@ -1084,9 +1180,7 @@ useEffect(() => {
       </div>
 
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr" }}>
-        {/* Right side */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {/* Users */}
           <Panel title={t.users} right={<PillCount n={users.length} />}>
             {users.length === 0 ? (
               <EmptyBox text={t.pickTL} />
@@ -1095,45 +1189,31 @@ useEffect(() => {
                 <div style={{ marginBottom: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button
                     type="button"
-                    onClick={() => {
-                      const allIds = users.map((u) => u.id);
-                      const allSelected = allIds.every((id) => selectedUsers.includes(id));
-                      setSelectedUsers(allSelected ? [] : allIds);
-                    }}
-                    style={btn(undefined, users.length > 0 && users.every((u) => selectedUsers.includes(u.id)))}
+                    onClick={() => setShowTLsInUsers((v) => !v)}
+                    style={btnSm(showTLsInUsers)}
+                    title={ar ? "إظهار/إخفاء قادة الفريق في القائمة" : "Toggle showing TLs in list"}
                   >
-                    {ar ? "تحديد/إلغاء كل الفريق" : "Toggle All Team"}
+                    {showTLsInUsers ? (ar ? "إخفاء القادة" : "Hide TLs") : ar ? "إظهار القادة" : "Show TLs"}
                   </button>
                 </div>
 
                 <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
-                  {users.map((u) => {
-                    const sel = selectedUsers.includes(u.id);
-                    return (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() =>
-                          setSelectedUsers((prev) => (prev.includes(u.id) ? prev.filter((id) => id !== u.id) : [...prev, u.id]))
-                        }
-                        style={btn(64, sel)}
-                      >
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4, textAlign: ar ? "right" : "left" }}>
-                          <span style={{ fontWeight: 700 }}>{(ar ? u.arabic_name : u.name) || u.username || "—"}</span>
-                          <span style={{ opacity: 0.7, fontSize: 12 }}>{roleLabel(u.role, ar)}</span>
-                        </div>
-                        <span style={{ opacity: 0.6 }}>{sel ? "✓" : "＋"}</span>
-                      </button>
-                    );
-                  })}
+                  {users.map((u) => (
+                    <button key={u.id} type="button" onClick={() => setSelectedUser(u.id)} style={btn(64, selectedUser === u.id)}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, textAlign: ar ? "right" : "left" }}>
+                        <span style={{ fontWeight: 700 }}>{(ar ? u.arabic_name : u.name) || u.username || "—"}</span>
+                        <span style={{ opacity: 0.7, fontSize: 12 }}>{roleLabel(u.role, ar)}</span>
+                      </div>
+                      <span style={{ opacity: 0.6 }}>{selectedUser === u.id ? "●" : "○"}</span>
+                    </button>
+                  ))}
                 </div>
               </>
             )}
           </Panel>
 
-          {/* Chains */}
           <Panel title={t.chains} right={<PillCount n={chains.length} />}>
-            {selectedUsers.length === 0 ? (
+            {!selectedUser ? (
               <EmptyBox text={t.pickUser} />
             ) : chains.length === 0 ? (
               <EmptyBox text={t.noMarkets} />
@@ -1145,9 +1225,7 @@ useEffect(() => {
                     <button
                       key={name}
                       type="button"
-                      onClick={() =>
-                        setSelectedChains((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]))
-                      }
+                      onClick={() => setSelectedChains((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]))}
                       style={btn(48, sel)}
                     >
                       <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</strong>
@@ -1159,9 +1237,8 @@ useEffect(() => {
             )}
           </Panel>
 
-          {/* Branches */}
           <Panel title={t.branches} right={<PillCount n={branches.length} />}>
-            {selectedUsers.length === 0 ? (
+            {!selectedUser ? (
               <EmptyBox text={t.pickUser} />
             ) : branches.length === 0 ? (
               <EmptyBox text={t.pickChain} />
@@ -1170,14 +1247,7 @@ useEffect(() => {
                 {branches.map((b) => {
                   const sel = selectedBranches.includes(b.id);
                   return (
-                    <button
-                      key={b.id}
-                      type="button"
-                      onClick={() =>
-                        setSelectedBranches((prev) => (prev.includes(b.id) ? prev.filter((x) => x !== b.id) : [...prev, b.id]))
-                      }
-                      style={btn(48, sel)}
-                    >
+                    <button key={b.id} type="button" onClick={() => setSelectedBranches((prev) => (prev.includes(b.id) ? prev.filter((x) => x !== b.id) : [...prev, b.id]))} style={btn(48, sel)}>
                       <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.label}</strong>
                       <span style={{ opacity: 0.6 }}>{sel ? "✓" : "＋"}</span>
                     </button>
@@ -1187,101 +1257,87 @@ useEffect(() => {
             )}
           </Panel>
 
-          {/* Dates */}
-         <Panel
-  title={`${t.dates} — ${t.completed}: ${completedCount} | ${t.pending}: ${pendingCount}`}
-  right={<PillCount n={visibleSnapshots.length} />}
->
-  {selectedUsers.length === 0 ? (
-    <EmptyBox text={t.pickUser} />
-  ) : selectedBranches.length === 0 ? (
-    <EmptyBox text={t.pickChain} />
-  ) : visibleSnapshots.length === 0 ? (
-    <EmptyBox text={t.noDates} />
-  ) : (
-    <>
-      <div style={{ marginBottom: 8, fontSize: 12, opacity: 0.8 }}>{t.pickDate}</div>
-      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
-        {visibleSnapshots.map((s) => {
-          const key = snapKey(s);
-          const sel = selectedSnapshotIds.includes(key);
+          <Panel title={`${t.dates} — ${t.completed}: ${completedCount} | ${t.pending}: ${pendingCount}`} right={<PillCount n={visibleSnapshots.length} />}>
+            {!selectedUser ? (
+              <EmptyBox text={t.pickUser} />
+            ) : selectedBranches.length === 0 ? (
+              <EmptyBox text={t.pickChain} />
+            ) : visibleSnapshots.length === 0 ? (
+              <EmptyBox text={t.noDates} />
+            ) : (
+              <>
+                <div style={{ marginBottom: 8, fontSize: 12, opacity: 0.8 }}>{t.pickDate}</div>
+                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+                  {visibleSnapshots.map((s) => {
+                    const key = s.id + "__" + s.snapshot_date;
+                    const sel = selectedSnapshotIds.includes(key);
 
-          const visitTimestamp = s.started_at || s.finished_at;
-          const started = visitTimestamp
-            ? new Date(visitTimestamp).toLocaleString(ar ? "ar-EG" : "en-GB", { timeZone: "Asia/Riyadh" })
-            : "—";
+                    const visitTimestamp = s.started_at || s.finished_at;
+                    const started = visitTimestamp ? new Date(visitTimestamp).toLocaleString(ar ? "ar-EG" : "en-GB", { timeZone: "Asia/Riyadh" }) : "—";
 
-          if (s.status === "finished") {
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setSelectedSnapshotIds([key])}
-                style={btn(56, sel)}
-              >
-                <div style={{ display: "flex", flexDirection: "column", gap: 4, textAlign: ar ? "right" : "left" }}>
-                  <strong>{started}</strong>
-                  <span style={{ opacity: 0.75, fontSize: 12 }}>{ar ? "مكتملة" : "Finished"}</span>
+                    if (s.status === "finished") {
+                      return (
+                        <button key={key} type="button" onClick={() => setSelectedSnapshotIds([key])} style={btn(56, sel)}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4, textAlign: ar ? "right" : "left" }}>
+                            <strong>{started}</strong>
+                            <span style={{ opacity: 0.75, fontSize: 12 }}>{ar ? "مكتملة" : "Finished"}</span>
+                          </div>
+                          <span style={{ opacity: 0.6 }}>{sel ? "✓" : "＋"}</span>
+                        </button>
+                      );
+                    }
+
+                    if (s.status === "ended") {
+                      return (
+                        <div
+                          key={key}
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 8,
+                            width: "100%",
+                            padding: "10px 12px",
+                            borderRadius: 12,
+                            border: "1px solid var(--input-border)",
+                            background: "var(--input-bg)",
+                            textAlign: ar ? "right" : "left",
+                          }}
+                        >
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            <strong>{started}</strong>
+                            <span style={{ opacity: 0.85, fontSize: 12, color: "#f87171", fontWeight: "bold" }}>{t.ended}</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              let photoUrl = s.end_visit_photo || "";
+                              try {
+                                const photos = JSON.parse(photoUrl);
+                                if (Array.isArray(photos) && photos.length > 0) photoUrl = photos[0];
+                              } catch {}
+                              setEndReasonViewer({
+                                open: true,
+                                reasonEn: s.end_reason_en || "",
+                                reasonAr: s.end_reason_ar || "",
+                                photo: photoUrl,
+                              });
+                            }}
+                            style={{ ...btnSm(false), width: "100%" }}
+                          >
+                            {t.showEndReason}
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })}
                 </div>
-                <span style={{ opacity: 0.6 }}>{sel ? "✓" : "＋"}</span>
-              </button>
-            );
-          }
+              </>
+            )}
+          </Panel>
 
-          if (s.status === "ended") {
-            return (
-              <div
-                key={key}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  border: "1px solid var(--input-border)",
-                  background: "var(--input-bg)",
-                  textAlign: ar ? "right" : "left",
-                }}
-              >
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <strong>{started}</strong>
-                  <span style={{ opacity: 0.85, fontSize: 12, color: "#f87171", fontWeight: "bold" }}>
-                    {t.ended}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    let photoUrl = s.end_visit_photo || "";
-                    try {
-                      const photos = JSON.parse(photoUrl);
-                      if (Array.isArray(photos) && photos.length > 0) photoUrl = photos[0];
-                    } catch { /* ignore */ }
-                    setEndReasonViewer({
-                      open: true,
-                      reasonEn: s.end_reason_en || "",
-                      reasonAr: s.end_reason_ar || "",
-                      photo: photoUrl,
-                    });
-                  }}
-                  style={{ ...btnSm(false), width: "100%" }}
-                >
-                  {t.showEndReason}
-                </button>
-              </div>
-            );
-          }
-
-          return null;
-        })}
-      </div>
-    </>
-  )}
-</Panel>
-
-          {/* Steps */}
           <Panel title={t.steps}>
             {selectedSnapshotIds.length === 0 ? (
               <div
@@ -1300,18 +1356,21 @@ useEffect(() => {
                 <div className="mb-3">
                   <StepsToolbar value={currentStep} onChange={setCurrentStep} onlyKeys={availableSteps} />
                 </div>
+
                 <StepDataTable
-                  step={currentStep}
-                  pageSize={25}
-                  visitId={activeVisitId}
-                  startDate={activeDate}
-                  endDate={activeDate}
-                />
+  step={currentStep}
+  visitIds={visitIdsForStep}
+  startDate={activeDate}
+  endDate={activeDate}
+  userId={selectedUser}       // ✅ أضفها
+  users={users}
+  jpState={activeJpState}
+/>
+
               </>
             )}
           </Panel>
 
-          {/* Modal to show End Reason */}
           {endReasonViewer.open && (
             <div
               onClick={() => setEndReasonViewer({ open: false, reasonEn: "", reasonAr: "", photo: "" })}
@@ -1327,7 +1386,7 @@ useEffect(() => {
               }}
             >
               <div
-                onClick={(e) => e.stopPropagation() }
+                onClick={(e) => e.stopPropagation()}
                 style={{
                   position: "relative",
                   maxWidth: 400,
@@ -1343,8 +1402,7 @@ useEffect(() => {
               >
                 <h3 style={{ margin: 0 }}>{ar ? "سبب إنهاء الزيارة" : "Visit End Reason"}</h3>
                 <p style={{ margin: 0, background: "var(--input-bg)", padding: 12, borderRadius: 8 }}>
-                  {(ar ? endReasonViewer.reasonAr : endReasonViewer.reasonEn) ||
-                    (ar ? "لا يوجد سبب مسجل." : "No reason recorded.")}
+                  {(ar ? endReasonViewer.reasonAr : endReasonViewer.reasonEn) || (ar ? "لا يوجد سبب مسجل." : "No reason recorded.")}
                 </p>
                 {endReasonViewer.photo && (
                   <div>
@@ -1364,7 +1422,6 @@ useEffect(() => {
             </div>
           )}
 
-          {/* Buttons */}
           <div style={{ display: "flex", justifyContent: ar ? "flex-end" : "flex-start", gap: 12, gridColumn: "1 / -1" }}>
             <Link
               href="/admin/inventory"
@@ -1408,7 +1465,7 @@ useEffect(() => {
   );
 }
 
-/* ========= styles helpers ========= */
+// [!!!] تم إصلاح الخطأ هنا
 function btn(h?: number, selected = false): React.CSSProperties {
   return {
     display: "flex",
@@ -1427,7 +1484,9 @@ function btn(h?: number, selected = false): React.CSSProperties {
     fontWeight: 700,
     transition: "all 0.15s ease",
   };
-}
+} 
+
+// [!!!] وتم إصلاح الخطأ هنا
 function btnSm(selected = false): React.CSSProperties {
   return {
     padding: "6px 10px",

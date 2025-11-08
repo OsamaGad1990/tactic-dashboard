@@ -1,15 +1,12 @@
 "use client";
 import { useEffect, useMemo, useState, ReactNode } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabaseClient";
+
 import { useLangTheme } from "@/hooks/useLangTheme";
 import TeamNotificationsTab from "./TeamNotificationsTab";
 import BroadcastTab from "./BroadcastTab";
 import { useRouter } from "next/navigation";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-);
 
 export default function NotificationsPage() {
   const { isArabic } = useLangTheme();

@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useId } from "react";
-import { supabase } from "@/utils/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 import { useLangTheme } from "@/hooks/useLangTheme";
 
 type Phase = "verifying" | "ready" | "updating" | "done" | "error";

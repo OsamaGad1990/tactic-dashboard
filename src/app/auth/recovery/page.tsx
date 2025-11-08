@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { supabase } from "@/utils/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 import AppHeader from "@/components/AppHeader";
 
 type Phase = "verifying" | "ready" | "updating" | "done" | "error";

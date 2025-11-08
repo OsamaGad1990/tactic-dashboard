@@ -1,5 +1,5 @@
 "use client";
-import { supabase } from "@/utils/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 
 /** يقرأ المستخدم ومفتاح الجلسة من التخزين المحلي/المؤقت */
 function readStored() {
