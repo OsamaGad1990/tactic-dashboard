@@ -308,7 +308,7 @@ export default function SuperAdminDashboardPage() {
     return isArabic
       ? {
           welcome: "مرحباً",
-          footer: "جميع الحقوق محفوظة لشركة Tactic & creativity",
+          footer: "جميع الحقوق محفوظة لشركة تكتيك و ابتكار",
           buttons: [
             "تقارير كل العملاء",
             "إضافة عميل جديد",
@@ -328,7 +328,7 @@ export default function SuperAdminDashboardPage() {
         }
       : {
           welcome: "Welcome",
-          footer: "all right reserved for Tactic & creativity",
+          footer: "all right reserved for Tactic & Inovation",
           buttons: [
             "ALL CLIENTS REPORTS",
             "ADD NEW CLIENT",

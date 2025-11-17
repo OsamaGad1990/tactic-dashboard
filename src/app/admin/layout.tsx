@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import "react-datepicker/dist/react-datepicker.css";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();

@@ -11,6 +11,8 @@ import { useAdminCascadingFilters } from "@/hooks/useAdminCascadingFilters";
 import type { PostgrestError } from "@supabase/supabase-js";
 import { useScopeLock } from "@/hooks/useScopeLock";
 import { supabase } from "@/lib/supabaseClient";
+import DatePicker from "react-datepicker";
+
 /* ========= Types ========= */
 type UUID = string;
 
@@ -230,34 +232,66 @@ function DateField({
   onChange: (v: string) => void;
   locale?: string;
 }) {
-  const pretty = (() => {
-    if (!value) return "—";
+  // نحول القيمة النصية Date؟YYYY-MM-DD → Date object
+  const selectedDate = useMemo(() => {
+    if (!value) return null;
     const d = new Date(value + "T00:00:00");
-    if (Number.isNaN(+d)) return value;
-    return d.toLocaleDateString(locale, { day: "2-digit", month: "2-digit", year: "numeric" });
+    return Number.isNaN(+d) ? null : d;
+  }, [value]);
+
+  // لما المستخدم يختار تاريخ من الـ picker
+  const handleChange = (date: Date | null) => {
+    if (!date) {
+      onChange("");
+      return;
+    }
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    onChange(`${yyyy}-${mm}-${dd}`); // نفس الفورمات اللي باقي الصفحة مستخدمه
+  };
+
+  const pretty = (() => {
+    if (!selectedDate) return "—";
+    try {
+      return selectedDate.toLocaleDateString(locale, {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+    } catch {
+      return value || "—";
+    }
   })();
 
   return (
     <div style={{ display: "grid", gap: 6 }}>
       {label ? <div style={{ fontSize: 12, opacity: 0.7 }}>{label}</div> : null}
-      <input
-        type="date"
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          width: "100%",
-          height: 36,
-          borderRadius: 8,
-          border: "1px solid var(--input-border)",
-          background: "var(--card)",
-          color: "var(--text)",
-          padding: "0 10px",
-        }}
-        title={pretty}
+      <DatePicker
+        selected={selectedDate}
+        onChange={handleChange}
+        dateFormat="yyyy-MM-dd"
+        placeholderText={pretty}
+        // نفس ستايل الـ input القديم تقريبًا
+        customInput={
+          <input
+            style={{
+              width: "100%",
+              height: 36,
+              borderRadius: 8,
+              border: "1px solid var(--input-border)",
+              background: "var(--card)",
+              color: "var(--text)",
+              padding: "0 10px",
+              cursor: "pointer",
+            }}
+          />
+        }
       />
     </div>
   );
 }
+
 /* ========= Small UI bits ========= */
 function PillCount({ n }: { n: number }) {
   return (

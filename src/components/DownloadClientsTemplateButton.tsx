@@ -1,20 +1,62 @@
 "use client";
+
+import React from "react";
 import * as XLSX from "xlsx";
 
+const TEMPLATE_HEADERS = [
+  "client_name",            // اسم العميل
+  "client_code",            // كود العميل
+  "commercial_number",      // رقم السجل التجاري
+  "address",                // العنوان
+  "tax_number",             // الرقم الضريبي
+  "national_address",       // العنوان الوطني
+  "enable_location_check",  // Yes/No أو True/False
+  "require_biometrics",     // Yes/No أو True/False
+  "activate_users",         // Yes/No أو True/False
+  "markets",                // أسواق بالأسماء مفصولة بفاصلة: store1,store2
+  "categories",             // فئات بالأسماء مفصولة بفاصلة: cat1,cat2
+  "app_steps",              // خطوات التطبيق: WH_COUNT,PLANOGRAM,...
+];
+
 export default function DownloadClientsTemplateButton() {
-  const onClick = () => {
-    const headers = [
-      "client_code*","name_ar*","name_en","tax_number","phone","email",
-      "default_language","active","start_date","markets","categories","app_steps"
+  const handleDownload = () => {
+    // صف توضيحي (اختياري) يوضح الفورمات
+    const exampleRow = [
+      "Client A",
+      "CLI-001",
+      "1234567890",
+      "Riyadh - ...",
+      "3111111111",
+      "Riyadh, Saudi Arabia",
+      "Yes",          // enable_location_check
+      "No",           // require_biometrics
+      "Yes",          // activate_users
+      "Store 1,Store 2",
+      "Category 1,Category 2",
+      "WH_COUNT,PLANOGRAM,SOS",
     ];
-    const ws = XLSX.utils.aoa_to_sheet([headers]);
+
+    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, exampleRow]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Clients");
-    XLSX.writeFile(wb, "clients_template.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "clients");
+
+    XLSX.writeFile(wb, "clients-template.xlsx");
   };
+
   return (
-    <button onClick={onClick} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #444", background: "#111", color: "#fff" }}>
-      {`Download Excel Template`}
+    <button
+      type="button"
+      onClick={handleDownload}
+      style={{
+        backgroundColor: "#111",
+        color: "#fff",
+        padding: "8px 16px",
+        borderRadius: 8,
+        border: "1px solid #666",
+        fontWeight: 600,
+      }}
+    >
+      Download Excel Template
     </button>
   );
 }

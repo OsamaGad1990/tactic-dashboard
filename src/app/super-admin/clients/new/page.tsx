@@ -1,12 +1,13 @@
 "use client";
+
 import { useMemo, useState, useEffect, FormEvent, ChangeEvent } from "react";
+import type React from "react";
 import { useRouter } from "next/navigation";
-import AppHeader from "@/components/AppHeader";
-import ClientPicker from "@/components/ClientPicker";
-import { useStagedClients } from "@/store/useStagedClients";
+import { useLangTheme } from "@/hooks/useLangTheme";
 import UploadClientsButton from "@/components/UploadClientsButton";
 import MultiSelect from "@/components/MultiSelect";
 import DownloadClientsTemplateButton from "@/components/DownloadClientsTemplateButton";
+import { supabase } from "@/lib/supabaseClient";
 
 type YesNo = "yes" | "no";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -24,51 +25,100 @@ type LocalUser = {
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
 type TableLabels = {
-  name: string; arabic_name: string; username: string; email: string;
-  mobile: string; role: string; active: string; remove: string;
+  name: string;
+  arabic_name: string;
+  username: string;
+  email: string;
+  mobile: string;
+  role: string;
+  active: string;
+  remove: string;
 };
 
 type TDict = {
   title: string;
   steps: string[];
-  next: string; back: string; createMock: string; cancel: string;
-  requiredHint: string; basicInfo: string; files: string; selections: string; toggles: string;
-  name: string; code: string; commercialNumber: string; address: string;
-  nationalFile: string; taxNumber: string; taxFile: string; commercialFile: string;
-  nationalAddress: string; agreementFile: string; logoFile: string;
-  markets: string; categories: string; linkedUsersPick: string; appSteps: string;
-  yes: string; no: string; enableLocation: string; requireBio: string; activateUsers: string;
-  usersTitle: string; importExcel: string; addUser: string; mustHaveOneUser: string;
-  reviewTitle?: string; clientData: string; linkedUsersHeader: string;
+  next: string;
+  back: string;
+  createMock: string;
+  cancel: string;
+  requiredHint: string;
+  basicInfo: string;
+  files: string;
+  selections: string;
+  toggles: string;
+  name: string;
+  code: string;
+  commercialNumber: string;
+  address: string;
+  nationalFile: string;
+  taxNumber: string;
+  taxFile: string;
+  commercialFile: string;
+  nationalAddress: string;
+  agreementFile: string;
+  logoFile: string;
+  markets: string;
+  categories: string;
+  linkedUsersPick: string; // مش مستخدم حالياً لكن سيبناه في الدكشنري
+  appSteps: string;
+  yes: string;
+  no: string;
+  enableLocation: string;
+  requireBio: string;
+  activateUsers: string;
+  usersTitle: string;
+  importExcel: string;
+  addUser: string;
+  mustHaveOneUser: string;
+  reviewTitle?: string;
+  clientData: string;
+  linkedUsersHeader: string;
   table: TableLabels;
   saveToast: string;
 };
 
 type Step1BasicProps = {
   T: TDict;
-  clientId: string | null; setClientId: Setter<string | null>;
-  name: string; setName: Setter<string>;
-  code: string; setCode: Setter<string>;
-  commercialNumber: string; setCommercialNumber: Setter<string>;
-  address: string; setAddress: Setter<string>;
-  nationalFile: File | null; setNationalFile: Setter<File | null>;
-  taxNumber: string; setTaxNumber: Setter<string>;
-  taxFile: File | null; setTaxFile: Setter<File | null>;
-  commercialFile: File | null; setCommercialFile: Setter<File | null>;
-  nationalAddress: string; setNationalAddress: Setter<string>;
-  agreementFile: File | null; setAgreementFile: Setter<File | null>;
-  logoFile: File | null; setLogoFile: Setter<File | null>;
-  markets: string[]; setMarkets: Setter<string[]>;
-  categories: string[]; setCategories: Setter<string[]>;
-  linkedUsersSelection: string[]; setLinkedUsersSelection: Setter<string[]>;
-  appStepsSelected: string[]; setAppStepsSelected: Setter<string[]>;
-  MOCK_MARKETS: string[]; MOCK_CATEGORIES: string[]; MOCK_PICKER_USERS: string[]; MOCK_STEPS: string[];
-  isValid: boolean; isArabic: boolean;
-  enableLocationCheck: YesNo; setEnableLocationCheck: Setter<YesNo>;
-  requireBiometrics: YesNo; setRequireBiometrics: Setter<YesNo>;
-  activateUsers: YesNo; setActivateUsers: Setter<YesNo>;
-  // ✅ مهم علشان الأوتوفيل
-  hydrateFromClient: (codeOrId: string) => Promise<void>;
+  name: string;
+  setName: Setter<string>;
+  code: string;
+  setCode: Setter<string>;
+  commercialNumber: string;
+  setCommercialNumber: Setter<string>;
+  address: string;
+  setAddress: Setter<string>;
+  nationalFile: File | null;
+  setNationalFile: Setter<File | null>;
+  taxNumber: string;
+  setTaxNumber: Setter<string>;
+  taxFile: File | null;
+  setTaxFile: Setter<File | null>;
+  commercialFile: File | null;
+  setCommercialFile: Setter<File | null>;
+  nationalAddress: string;
+  setNationalAddress: Setter<string>;
+  agreementFile: File | null;
+  setAgreementFile: Setter<File | null>;
+  logoFile: File | null;
+  setLogoFile: Setter<File | null>;
+  markets: string[];
+  setMarkets: Setter<string[]>;
+  categories: string[];
+  setCategories: Setter<string[]>;
+  appStepsSelected: string[];
+  setAppStepsSelected: Setter<string[]>;
+  marketsOptions: string[];
+  categoriesOptions: string[];
+  stepsOptions: string[];
+  isValid: boolean;
+  isArabic: boolean;
+  enableLocationCheck: YesNo;
+  setEnableLocationCheck: Setter<YesNo>;
+  requireBiometrics: YesNo;
+  setRequireBiometrics: Setter<YesNo>;
+  activateUsers: YesNo;
+  setActivateUsers: Setter<YesNo>;
 };
 
 type Step2UsersProps = {
@@ -85,25 +135,34 @@ type Step2UsersProps = {
 };
 
 type ReviewData = {
-  name: string; code: string; commercialNumber: string; address: string;
-  nationalFile: File | null; taxNumber: string; taxFile: File | null; commercialFile: File | null;
-  nationalAddress: string; agreementFile: File | null; logoFile: File | null;
-  markets: string[]; categories: string[]; linkedUsersSelection: string[]; appStepsSelected: string[];
-  enableLocationCheck: YesNo; requireBiometrics: YesNo; activateUsers: YesNo;
+  name: string;
+  code: string;
+  commercialNumber: string;
+  address: string;
+  nationalFile: File | null;
+  taxNumber: string;
+  taxFile: File | null;
+  commercialFile: File | null;
+  nationalAddress: string;
+  agreementFile: File | null;
+  logoFile: File | null;
+  markets: string[];
+  categories: string[];
+  appStepsSelected: string[];
+  enableLocationCheck: YesNo;
+  requireBiometrics: YesNo;
+  activateUsers: YesNo;
   users: LocalUser[];
 };
 
-type Step3ReviewProps = { T: TDict; data: ReviewData; isArabic: boolean; };
+type Step3ReviewProps = { T: TDict; data: ReviewData; isArabic: boolean };
 
 export default function AddClientWizardMock() {
   const router = useRouter();
-  const [isArabic, setIsArabic] = useState(
-    typeof window !== "undefined" && localStorage.getItem("lang") === "en" ? false : true
-  );
+  const { isArabic } = useLangTheme(); // اللغة من الهيدر العالمي
 
   // ====== حالة الـ Wizard ======
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [clientId, setClientId] = useState<string | null>(null);
 
   // ====== الخطوة 1: بيانات العميل ======
   const [name, setName] = useState("");
@@ -121,18 +180,23 @@ export default function AddClientWizardMock() {
 
   const [markets, setMarkets] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
-  const [linkedUsersSelection, setLinkedUsersSelection] = useState<string[]>([]);
   const [appStepsSelected, setAppStepsSelected] = useState<string[]>([]);
 
   const [enableLocationCheck, setEnableLocationCheck] = useState<YesNo>("no");
   const [requireBiometrics, setRequireBiometrics] = useState<YesNo>("no");
   const [activateUsers, setActivateUsers] = useState<YesNo>("yes");
 
+  // خيارات ديناميكية من قاعدة البيانات
+  const [marketOptions, setMarketOptions] = useState<string[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+  const STEP_OPTIONS = ["WH_COUNT", "PLANOGRAM", "COMPACTIVITY", "DAMDAGE_COUNT", "SOS"];
+
   // ====== الخطوة 2: المستخدمون المرتبطون ======
-  const [users, setUsers] = useState<LocalUser[]>([makeEmptyUserRow()]);
   function makeEmptyUserRow(): LocalUser {
     return { id: crypto.randomUUID(), active: "yes" };
   }
+  const [users, setUsers] = useState<LocalUser[]>([makeEmptyUserRow()]);
+
   function addUserRow() {
     setUsers((prev) => [...prev, makeEmptyUserRow()]);
   }
@@ -148,44 +212,49 @@ export default function AddClientWizardMock() {
     setExcelFile(f);
   }
 
-  // ====== الخطوة 3 ======
+  // ====== Toast / Saving ======
   const [toast, setToast] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const MOCK_MARKETS = ["Riyadh", "Jeddah", "Dammam", "Abha"];
-  const MOCK_CATEGORIES = ["Electronics", "Grocery", "Fashion", "Pharmacy"];
-  const MOCK_PICKER_USERS = ["ahmed", "sara", "mohamed", "fatimah"];
-  const MOCK_STEPS = ["SOS", "DAMDAGE_COUNT", "COMPACTIVITY", "PLANOGRAM", "WH_COUNT"];
   const MOCK_ROLES = ["super_admin", "admin", "team_leader", "mch", "promo", "viewer"];
 
-  // ✅ أوتوفيل بيانات العميل بعد اختياره
-  async function hydrateFromClient(codeOrId: string) {
-    const res = await fetch("/api/clients/get-client", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_code: codeOrId }), // لو ClientPicker بيرجع id بدّلها لـ { id: codeOrId }
-    });
+  // ====== تحميل الأسواق والفئات من Supabase ======
+  useEffect(() => {
+    const fetchLookups = async () => {
+      try {
+        const [{ data: marketsData, error: marketsError }, { data: catsData, error: catsError }] =
+          await Promise.all([
+            supabase.from("Markets").select("store").order("store", { ascending: true }),
+            supabase.from("categories").select("name").order("name", { ascending: true }),
+          ]);
 
-    const { client } = (await res.json()) as {
-      client: null | {
-        client_code: string;
-        name_ar: string | null;
-        name_en: string | null;
-        tax_number: string | null;
-        markets: string[];
-        categories: string[];
-        app_steps: string[];
-      };
+        if (marketsError) throw marketsError;
+        if (catsError) throw catsError;
+
+        if (marketsData) {
+          const stores = Array.from(
+            new Set(
+              (marketsData as any[])
+                .map((m) => m.store as string | null)
+                .filter((s): s is string => !!s)
+            )
+          );
+          setMarketOptions(stores);
+        }
+
+        if (catsData) {
+          const names = (catsData as any[])
+            .map((c) => c.name as string | null)
+            .filter((n): n is string => !!n);
+          setCategoryOptions(names);
+        }
+      } catch (err) {
+        console.error("Error loading lookups", err);
+      }
     };
 
-    if (!client) return;
-
-    setName(client.name_ar || client.name_en || "");
-    setCode(client.client_code || "");
-    setTaxNumber(client.tax_number || "");
-    setMarkets(Array.isArray(client.markets) ? client.markets : []);
-    setCategories(Array.isArray(client.categories) ? client.categories : []);
-    setAppStepsSelected(Array.isArray(client.app_steps) ? client.app_steps : []);
-  }
+    fetchLookups();
+  }, []);
 
   // ====== النصوص ======
   const T = useMemo<TDict>(() => {
@@ -195,7 +264,7 @@ export default function AddClientWizardMock() {
           steps: ["البيانات الأساسية", "المستخدمون المرتبطون", "المراجعة والتأكيد"],
           next: "التالي",
           back: "السابق",
-          createMock: "إنشاء (ماكيت)",
+          createMock: "حفظ العميل",
           cancel: "إلغاء",
           requiredHint: "الحقول الإلزامية مميزة بعلامة *",
           basicInfo: "البيانات الأساسية",
@@ -239,14 +308,14 @@ export default function AddClientWizardMock() {
           reviewTitle: "مراجعة وتأكيد",
           clientData: "بيانات العميل",
           linkedUsersHeader: "المستخدمون",
-          saveToast: "تم إضافة العميل للمسودة ✅",
+          saveToast: "تم حفظ العميل بنجاح ✅",
         }
       : {
           title: "Add New Client - Wizard",
           steps: ["Basic Info", "Linked Users", "Review & Confirm"],
           next: "Next",
           back: "Back",
-          createMock: "Create (Mock)",
+          createMock: "Save Client",
           cancel: "Cancel",
           requiredHint: "Required fields marked with *",
           basicInfo: "Basic Info",
@@ -290,20 +359,19 @@ export default function AddClientWizardMock() {
           reviewTitle: "Review & Confirm",
           clientData: "Client Data",
           linkedUsersHeader: "Users",
-          saveToast: "Added to staging ✅",
+          saveToast: "Client saved ✅",
         };
   }, [isArabic]);
 
   // ====== تحقق صحة الخطوات ======
-  const isStep1Valid = useMemo(() => {
-    return (
-      !!clientId &&
+  const isStep1Valid = useMemo(
+    () =>
       name.trim().length > 0 &&
       commercialNumber.trim().length > 0 &&
       address.trim().length > 0 &&
-      !!nationalFile
-    );
-  }, [clientId, name, commercialNumber, address, nationalFile]);
+      !!nationalFile,
+    [name, commercialNumber, address, nationalFile]
+  );
 
   const isStep2Valid = useMemo(() => {
     const validUsers = users.filter(
@@ -312,7 +380,7 @@ export default function AddClientWizardMock() {
     return validUsers.length > 0;
   }, [users]);
 
-  // ====== Toast ======
+  // ====== Toast auto-hide ======
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 3000);
@@ -332,199 +400,291 @@ export default function AddClientWizardMock() {
     setStep((s) => prevStep(s));
   }
 
-  // ====== ربط المسودة (clients) ======
-  const { addClient } = useStagedClients();
+  // ====== حفظ في جدول client + ClientFeatures + ملفات ======
+  async function onCreateMock(e: FormEvent) {
+  e.preventDefault();
 
-  function onCreateMock(e: FormEvent) {
-    e.preventDefault();
+  const client_code = (code || "").toString().trim();
+  const nameBoth = (name || "").toString().trim();
 
-    const client_code = (code || clientId || "").toString().trim();
-    const nameBoth = (name || "").toString().trim();
-
-    if (!client_code || !nameBoth) {
-      setToast(isArabic ? "أدخل كود العميل والاسم" : "Enter client code and name");
-      return;
-    }
-
-    const res = addClient({
-      client_code,
-      name_ar: nameBoth,
-      name_en: nameBoth,
-      tax_number: taxNumber || undefined,
-      phone: undefined,
-      email: undefined,
-      default_language: isArabic ? "ar" : "en",
-      active: true,
-      start_date: undefined,
-      markets,
-      categories,
-      app_steps: appStepsSelected,
-    });
-
-    setToast(res.ok ? T.saveToast : res.msg || "Error");
+  if (!client_code || !nameBoth) {
+    setToast(isArabic ? "أدخل كود العميل والاسم" : "Enter client code and name");
+    return;
+  }
+  if (!nationalFile) {
+    setToast(isArabic ? "أرفِق الملف الوطني" : "Attach national file");
+    return;
   }
 
-  const wrapper: React.CSSProperties = {
-    background: "#000",
-    minHeight: "100vh",
-    color: "#fff",
-    display: "flex",
-    flexDirection: "column",
-  };
+  try {
+    setSaving(true);
+    setToast("");
 
+    // ... هنا تحويل الأسواق / الفئات لـ IDs لو أنت عاملها
+
+    const payload = {
+      name: nameBoth,
+      name_ar: nameBoth,
+      code: client_code || null,
+      tax_number: taxNumber || null,
+      commercial_number: commercialNumber || null,
+      national_address: nationalAddress || null,
+      address: address || null,
+
+      // ⬅⬅ الربط بتاع الـ Yes/No
+      enable_location_check: enableLocationCheck === "yes",
+      require_biometrics: requireBiometrics === "yes",
+      activate_users: activateUsers === "yes",
+
+      markets: marketIds,      // لو بتستخدم IDs
+      categories: categoryIds, // لو بتستخدم IDs
+    };
+
+    const { data: inserted, error: insertError } = await supabase
+      .from("client")
+      .insert(payload)
+      .select("id")
+      .single();
+
+      if (insertError || !inserted) {
+        throw insertError || new Error("Insert failed");
+      }
+
+      const clientId: string = inserted.id;
+
+      // 3) رفع الملفات على bucket clients-files
+      const [nationalUrl, taxUrl, commercialUrl, agreementUrl, logoUrl] = await Promise.all([
+        uploadClientFile(clientId, nationalFile, "national"),
+        uploadClientFile(clientId, taxFile, "tax"),
+        uploadClientFile(clientId, commercialFile, "commercial"),
+        uploadClientFile(clientId, agreementFile, "agreement"),
+        uploadClientFile(clientId, logoFile, "logo"),
+      ]);
+
+      const { error: updateFilesError } = await supabase
+        .from("client")
+        .update({
+          national_file_url: nationalUrl,
+          tax_file_url: taxUrl,
+          commercial_file_url: commercialUrl,
+          agreement_file_url: agreementUrl,
+          logo_url: logoUrl,
+        })
+        .eq("id", clientId);
+
+      if (updateFilesError) throw updateFilesError;
+
+      // 4) تخزين خطوات التطبيق في ClientFeatures
+      if (appStepsSelected.length) {
+        const featuresPayload = appStepsSelected.map((feature_key) => ({
+          client_id: clientId,
+          feature_key,
+          is_enabled: true,
+        }));
+
+        const { error: featError } = await supabase
+          .from("ClientFeatures")
+          .upsert(featuresPayload, { onConflict: "client_id,feature_key" });
+
+        if (featError) throw featError;
+        // التريجر sync_client_app_steps_json() هيتكفل بتحديث client.app_steps
+      }
+
+      setToast(T.saveToast);
+      // تقدر تغيّر المسار اللي بعد الحفظ لو حابب
+      // router.push("/super-admin/clients");
+    } catch (err: any) {
+      console.error(err);
+      setToast(err?.message || "Error while saving client");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ====== الـ UI ======
   return (
-    <div style={wrapper}>
-      <AppHeader onToggleLang={() => setIsArabic((s) => !s)} showLogout />
+    <div
+      style={{
+        maxWidth: 1100,
+        margin: "24px auto",
+        width: "100%",
+        padding: "0 20px",
+      }}
+    >
+      <h2 style={{ marginBottom: 8 }}>{T.title}</h2>
+      <Stepper labels={T.steps} current={step} />
 
-      <div style={{ maxWidth: 1100, margin: "24px auto", width: "100%", padding: "0 20px" }}>
-        <h2 style={{ marginBottom: 8 }}>{T.title}</h2>
-        <Stepper labels={T.steps} current={step} />
+      <form onSubmit={onCreateMock}>
+        {/* Step 1 */}
+        {step === 1 && (
+          <Step1Basic
+            T={T}
+            name={name}
+            setName={setName}
+            code={code}
+            setCode={setCode}
+            commercialNumber={commercialNumber}
+            setCommercialNumber={setCommercialNumber}
+            address={address}
+            setAddress={setAddress}
+            nationalFile={nationalFile}
+            setNationalFile={setNationalFile}
+            taxNumber={taxNumber}
+            setTaxNumber={setTaxNumber}
+            taxFile={taxFile}
+            setTaxFile={setTaxFile}
+            commercialFile={commercialFile}
+            setCommercialFile={setCommercialFile}
+            nationalAddress={nationalAddress}
+            setNationalAddress={setNationalAddress}
+            agreementFile={agreementFile}
+            setAgreementFile={setAgreementFile}
+            logoFile={logoFile}
+            setLogoFile={setLogoFile}
+            markets={markets}
+            setMarkets={setMarkets}
+            categories={categories}
+            setCategories={setCategories}
+            appStepsSelected={appStepsSelected}
+            setAppStepsSelected={setAppStepsSelected}
+            marketsOptions={marketOptions}
+            categoriesOptions={categoryOptions}
+            stepsOptions={STEP_OPTIONS}
+            isValid={isStep1Valid}
+            isArabic={isArabic}
+            enableLocationCheck={enableLocationCheck}
+            setEnableLocationCheck={setEnableLocationCheck}
+            requireBiometrics={requireBiometrics}
+            setRequireBiometrics={setRequireBiometrics}
+            activateUsers={activateUsers}
+            setActivateUsers={setActivateUsers}
+          />
+        )}
 
-        <form onSubmit={onCreateMock}>
-          {/* Step 1 */}
-          {step === 1 && (
-            <Step1Basic
-              T={T}
-              clientId={clientId}
-              setClientId={setClientId}
-              name={name}
-              setName={setName}
-              code={code}
-              setCode={setCode}
-              commercialNumber={commercialNumber}
-              setCommercialNumber={setCommercialNumber}
-              address={address}
-              setAddress={setAddress}
-              nationalFile={nationalFile}
-              setNationalFile={setNationalFile}
-              taxNumber={taxNumber}
-              setTaxNumber={setTaxNumber}
-              taxFile={taxFile}
-              setTaxFile={setTaxFile}
-              commercialFile={commercialFile}
-              setCommercialFile={setCommercialFile}
-              nationalAddress={nationalAddress}
-              setNationalAddress={setNationalAddress}
-              agreementFile={agreementFile}
-              setAgreementFile={setAgreementFile}
-              logoFile={logoFile}
-              setLogoFile={setLogoFile}
-              markets={markets}
-              setMarkets={setMarkets}
-              categories={categories}
-              setCategories={setCategories}
-              linkedUsersSelection={linkedUsersSelection}
-              setLinkedUsersSelection={setLinkedUsersSelection}
-              appStepsSelected={appStepsSelected}
-              setAppStepsSelected={setAppStepsSelected}
-              MOCK_MARKETS={MOCK_MARKETS}
-              MOCK_CATEGORIES={MOCK_CATEGORIES}
-              MOCK_PICKER_USERS={MOCK_PICKER_USERS}
-              MOCK_STEPS={MOCK_STEPS}
-              isValid={isStep1Valid}
-              isArabic={isArabic}
-              enableLocationCheck={enableLocationCheck}
-              setEnableLocationCheck={setEnableLocationCheck}
-              requireBiometrics={requireBiometrics}
-              setRequireBiometrics={setRequireBiometrics}
-              activateUsers={activateUsers}
-              setActivateUsers={setActivateUsers}
-              hydrateFromClient={hydrateFromClient} // ✅ مهم
-            />
-          )}
+        {/* Step 2 */}
+        {step === 2 && (
+          <Step2Users
+            T={T}
+            users={users}
+            addUserRow={addUserRow}
+            removeUserRow={removeUserRow}
+            updateUserRow={updateUserRow}
+            excelFile={excelFile}
+            handleExcelChange={handleExcelChange}
+            roles={MOCK_ROLES}
+            isValid={isStep2Valid}
+            isArabic={isArabic}
+          />
+        )}
 
-          {/* Step 2 */}
-          {step === 2 && (
-            <Step2Users
-              T={T}
-              users={users}
-              addUserRow={addUserRow}
-              removeUserRow={removeUserRow}
-              updateUserRow={updateUserRow}
-              excelFile={excelFile}
-              handleExcelChange={handleExcelChange}
-              roles={MOCK_ROLES}
-              isValid={isStep2Valid}
-              isArabic={isArabic}
-            />
-          )}
+        {/* Step 3 */}
+        {step === 3 && (
+          <Step3Review
+            T={T}
+            data={{
+              name,
+              code,
+              commercialNumber,
+              address,
+              nationalFile,
+              taxNumber,
+              taxFile,
+              commercialFile,
+              nationalAddress,
+              agreementFile,
+              logoFile,
+              markets,
+              categories,
+              appStepsSelected,
+              enableLocationCheck,
+              requireBiometrics,
+              activateUsers,
+              users,
+            }}
+            isArabic={isArabic}
+          />
+        )}
 
-          {/* Step 3 */}
-          {step === 3 && (
-            <Step3Review
-              T={T}
-              data={{
-                name,
-                code,
-                commercialNumber,
-                address,
-                nationalFile,
-                taxNumber,
-                taxFile,
-                commercialFile,
-                nationalAddress,
-                agreementFile,
-                logoFile,
-                markets,
-                categories,
-                linkedUsersSelection,
-                appStepsSelected,
-                enableLocationCheck,
-                requireBiometrics,
-                activateUsers,
-                users,
-              }}
-              isArabic={isArabic}
-            />
-          )}
+        {/* أزرار التحكم */}
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            justifyContent: "space-between",
+            marginTop: 16,
+          }}
+        >
+          <button type="button" onClick={() => router.back()} style={secondaryBtn}>
+            {T.cancel}
+          </button>
 
-          {/* أزرار التحكم */}
-          <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 16 }}>
-            <button type="button" onClick={() => router.back()} style={secondaryBtn}>
-              {T.cancel}
-            </button>
+          <div style={{ display: "flex", gap: 10 }}>
+            {step > 1 && (
+              <button type="button" onClick={goBack} style={secondaryBtn}>
+                {T.back}
+              </button>
+            )}
 
-            <div style={{ display: "flex", gap: 10 }}>
-              {step > 1 && (
-                <button type="button" onClick={goBack} style={secondaryBtn}>
-                  {T.back}
-                </button>
-              )}
+            {step < 3 && (
+              <button
+                type="button"
+                onClick={goNext}
+                style={{
+                  ...primaryBtn,
+                  opacity: (step === 1 ? isStep1Valid : isStep2Valid) ? 1 : 0.6,
+                  cursor: (step === 1 ? isStep1Valid : isStep2Valid) ? "pointer" : "not-allowed",
+                }}
+                disabled={step === 1 ? !isStep1Valid : !isStep2Valid}
+              >
+                {T.next}
+              </button>
+            )}
 
-              {step < 3 && (
-                <button
-                  type="button"
-                  onClick={goNext}
-                  style={{
-                    ...primaryBtn,
-                    opacity: (step === 1 ? isStep1Valid : isStep2Valid) ? 1 : 0.6,
-                    cursor: (step === 1 ? isStep1Valid : isStep2Valid) ? "pointer" : "not-allowed",
-                  }}
-                  disabled={step === 1 ? !isStep1Valid : !isStep2Valid}
-                >
-                  {T.next}
-                </button>
-              )}
-
-              {step === 3 && (
-                <button type="submit" style={primaryBtn}>
-                  {T.createMock}
-                </button>
-              )}
-            </div>
+            {step === 3 && (
+              <button type="submit" style={primaryBtn} disabled={saving}>
+                {saving
+                  ? isArabic
+                    ? "جاري الحفظ..."
+                    : "Saving..."
+                  : T.createMock}
+              </button>
+            )}
           </div>
-
-          {toast && <div style={toastStyle}>{toast}</div>}
-        </form>
-
-        {/* تنزيل تمبليت + الرفع إلى سوبابيز */}
-        <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
-          <DownloadClientsTemplateButton />
-          <UploadClientsButton />
         </div>
+
+        {toast && <div style={toastStyle}>{toast}</div>}
+      </form>
+
+      <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
+        <DownloadClientsTemplateButton />
+        <UploadClientsButton />
       </div>
     </div>
   );
+}
+
+/* ====== رفع ملف للـ bucket ====== */
+async function uploadClientFile(
+  clientId: string,
+  file: File | null,
+  kind: "national" | "tax" | "commercial" | "agreement" | "logo"
+): Promise<string | null> {
+  if (!file) return null;
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  const path = `${clientId}/${kind}-${Date.now()}-${safeName}`;
+
+  const { error } = await supabase.storage.from("clients-files").upload(path, file, {
+    upsert: true,
+  });
+
+  if (error) {
+    console.error("upload error", error);
+    throw error;
+  }
+
+  const { data } = supabase.storage.from("clients-files").getPublicUrl(path);
+  return data.publicUrl ?? null;
 }
 
 /* ======================= المكوّنات المساعدة ======================= */
@@ -609,7 +769,7 @@ const secondaryBtn: React.CSSProperties = {
 const chipBtn = (active: boolean): React.CSSProperties => ({
   padding: "8px 12px",
   borderRadius: 20,
-  border: active ? "2px solid #f5a623" : "1px solid #444", // ✅ هنا كانت المشكلة
+  border: active ? "2px solid #f5a623" : "1px solid #444",
   background: active ? "#303030" : "#1a1a1a",
   color: "#eee",
   fontWeight: 700,
@@ -625,7 +785,15 @@ const toastStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <div style={{ marginBottom: 12 }}>
       <label style={{ display: "block", marginBottom: 6, color: "#bbb", fontWeight: 600 }}>
@@ -702,8 +870,6 @@ function MultiRow({
 function Step1Basic(props: Step1BasicProps) {
   const {
     T,
-    clientId,
-    setClientId,
     name,
     setName,
     code,
@@ -730,14 +896,11 @@ function Step1Basic(props: Step1BasicProps) {
     setMarkets,
     categories,
     setCategories,
-    linkedUsersSelection,
-    setLinkedUsersSelection,
     appStepsSelected,
     setAppStepsSelected,
-    MOCK_MARKETS,
-    MOCK_CATEGORIES,
-    MOCK_PICKER_USERS,
-    MOCK_STEPS,
+    marketsOptions,
+    categoriesOptions,
+    stepsOptions,
     isValid,
     enableLocationCheck,
     setEnableLocationCheck,
@@ -746,7 +909,6 @@ function Step1Basic(props: Step1BasicProps) {
     activateUsers,
     setActivateUsers,
     isArabic,
-    hydrateFromClient, // ✅
   } = props;
 
   return (
@@ -754,16 +916,6 @@ function Step1Basic(props: Step1BasicProps) {
       <p style={{ color: "#bbb", marginTop: 0 }}>{T.requiredHint}</p>
 
       <section style={sectionBox}>
-        {/* ✅ اختيار العميل */}
-        <ClientPicker
-          value={clientId}
-          onChange={(v) => {
-            setClientId(v);
-            if (v) hydrateFromClient(v);
-          }}
-          isArabic={isArabic}
-        />
-
         <h3 style={sectionTitle}>{T.basicInfo}</h3>
         <Field label={T.name} required>
           <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} />
@@ -772,7 +924,11 @@ function Step1Basic(props: Step1BasicProps) {
           <input value={code} onChange={(e) => setCode(e.target.value)} style={inputStyle} />
         </Field>
         <Field label={T.commercialNumber} required>
-          <input value={commercialNumber} onChange={(e) => setCommercialNumber(e.target.value)} style={inputStyle} />
+          <input
+            value={commercialNumber}
+            onChange={(e) => setCommercialNumber(e.target.value)}
+            style={inputStyle}
+          />
         </Field>
         <Field label={T.address} required>
           <input value={address} onChange={(e) => setAddress(e.target.value)} style={inputStyle} />
@@ -788,7 +944,11 @@ function Step1Basic(props: Step1BasicProps) {
         <FileField label={T.taxFile} file={taxFile} onFile={setTaxFile} />
         <FileField label={T.commercialFile} file={commercialFile} onFile={setCommercialFile} />
         <Field label={T.nationalAddress}>
-          <input value={nationalAddress} onChange={(e) => setNationalAddress(e.target.value)} style={inputStyle} />
+          <input
+            value={nationalAddress}
+            onChange={(e) => setNationalAddress(e.target.value)}
+            style={inputStyle}
+          />
         </Field>
         <FileField label={T.agreementFile} file={agreementFile} onFile={setAgreementFile} />
         <FileField label={T.logoFile} file={logoFile} onFile={setLogoFile} hint={T.logoFile} />
@@ -797,40 +957,27 @@ function Step1Basic(props: Step1BasicProps) {
       <section style={sectionBox}>
         <h3 style={sectionTitle}>{T.selections}</h3>
 
-        {/* ✅ MultiSelect للماركتس */}
         <MultiSelect
           label={T.markets}
-          options={MOCK_MARKETS}
+          options={marketsOptions}
           values={markets}
           onChange={setMarkets}
           placeholder={isArabic ? "اختر الأسواق..." : "Select markets..."}
           rtl={isArabic}
         />
 
-        {/* ✅ MultiSelect للفئات بدل MultiRow */}
         <MultiSelect
           label={T.categories}
-          options={MOCK_CATEGORIES}
+          options={categoriesOptions}
           values={categories}
           onChange={setCategories}
           placeholder={isArabic ? "اختر الفئات..." : "Select categories..."}
           rtl={isArabic}
         />
 
-        {/* ✅ MultiSelect للمستخدمين */}
-        <MultiSelect
-          label={T.linkedUsersPick}
-          options={MOCK_PICKER_USERS}
-          values={linkedUsersSelection}
-          onChange={setLinkedUsersSelection}
-          placeholder={isArabic ? "اختر المستخدمين..." : "Select users..."}
-          rtl={isArabic}
-        />
-
-        {/* لسه مخلّي App Steps بالـ chips لحد ما نعملها من الدروب داون برضو */}
         <MultiRow
           label={T.appSteps}
-          options={MOCK_STEPS}
+          options={stepsOptions}
           values={appStepsSelected}
           onToggle={(v) => toggleHelper(appStepsSelected, setAppStepsSelected, v)}
         />
@@ -839,12 +986,30 @@ function Step1Basic(props: Step1BasicProps) {
       <section style={sectionBox}>
         <h3 style={sectionTitle}>{T.toggles}</h3>
 
-        <YesNoRow label={T.enableLocation} value={enableLocationCheck} onChange={setEnableLocationCheck} yes={T.yes} no={T.no} />
-        <YesNoRow label={T.requireBio} value={requireBiometrics} onChange={setRequireBiometrics} yes={T.yes} no={T.no} />
-        <YesNoRow label={T.activateUsers} value={activateUsers} onChange={setActivateUsers} yes={T.yes} no={T.no} />
+        <YesNoRow
+          label={T.enableLocation}
+          value={enableLocationCheck}
+          onChange={setEnableLocationCheck}
+          yes={T.yes}
+          no={T.no}
+        />
+        <YesNoRow
+          label={T.requireBio}
+          value={requireBiometrics}
+          onChange={setRequireBiometrics}
+          yes={T.yes}
+          no={T.no}
+        />
+        <YesNoRow
+          label={T.activateUsers}
+          value={activateUsers}
+          onChange={setActivateUsers}
+          yes={T.yes}
+          no={T.no}
+        />
       </section>
 
-      {!isValid && <div style={{ marginTop: 10, color: "#ffb3b3" }}>{/* رسالة توضيحية إن حبيت */}</div>}
+      {!isValid && <div style={{ marginTop: 10, color: "#ffb3b3" }} />}
     </>
   );
 }
@@ -883,7 +1048,8 @@ function YesNoRow({
 
 /* ======================= Step 2 ======================= */
 function Step2Users(props: Step2UsersProps) {
-  const { T, users, addUserRow, removeUserRow, updateUserRow, excelFile, handleExcelChange, roles, isValid, isArabic } = props;
+  const { T, users, addUserRow, removeUserRow, updateUserRow, excelFile, handleExcelChange, roles, isValid, isArabic } =
+    props;
   return (
     <>
       <section style={sectionBox}>
@@ -894,12 +1060,24 @@ function Step2Users(props: Step2UsersProps) {
             {T.addUser}
           </button>
 
-          <label style={{ ...secondaryBtn, display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <label
+            style={{
+              ...secondaryBtn,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+            }}
+          >
             <input type="file" accept=".xlsx,.xls" onChange={handleExcelChange} style={{ display: "none" }} />
             {T.importExcel}
           </label>
 
-          {excelFile && <div style={{ color: "#bbb", alignSelf: "center" }}>{(isArabic ? "ملف: " : "File: ") + excelFile.name}</div>}
+          {excelFile && (
+            <div style={{ color: "#bbb", alignSelf: "center" }}>
+              {(isArabic ? "ملف: " : "File: ") + excelFile.name}
+            </div>
+          )}
         </div>
 
         <div style={{ overflowX: "auto", border: "1px solid #2c2c2c", borderRadius: 8 }}>
@@ -917,25 +1095,51 @@ function Step2Users(props: Step2UsersProps) {
               {users.map((u) => (
                 <tr key={u.id}>
                   <td style={tdStyle}>
-                    <input value={u.name ?? ""} onChange={(e) => updateUserRow(u.id, { name: e.target.value })} style={inputStyle} />
+                    <input
+                      value={u.name ?? ""}
+                      onChange={(e) => updateUserRow(u.id, { name: e.target.value })}
+                      style={inputStyle}
+                    />
                   </td>
                   <td style={tdStyle}>
-                    <input value={u.arabic_name ?? ""} onChange={(e) => updateUserRow(u.id, { arabic_name: e.target.value })} style={inputStyle} />
+                    <input
+                      value={u.arabic_name ?? ""}
+                      onChange={(e) => updateUserRow(u.id, { arabic_name: e.target.value })}
+                      style={inputStyle}
+                    />
                   </td>
                   <td style={tdStyle}>
-                    <input value={u.username ?? ""} onChange={(e) => updateUserRow(u.id, { username: e.target.value })} style={inputStyle} />
+                    <input
+                      value={u.username ?? ""}
+                      onChange={(e) => updateUserRow(u.id, { username: e.target.value })}
+                      style={inputStyle}
+                    />
                   </td>
                   <td style={tdStyle}>
-                    <input value={u.email ?? ""} onChange={(e) => updateUserRow(u.id, { email: e.target.value })} style={inputStyle} />
+                    <input
+                      value={u.email ?? ""}
+                      onChange={(e) => updateUserRow(u.id, { email: e.target.value })}
+                      style={inputStyle}
+                    />
                   </td>
                   <td style={tdStyle}>
-                    <input value={u.mobile ?? ""} onChange={(e) => updateUserRow(u.id, { mobile: e.target.value })} style={inputStyle} />
+                    <input
+                      value={u.mobile ?? ""}
+                      onChange={(e) => updateUserRow(u.id, { mobile: e.target.value })}
+                      style={inputStyle}
+                    />
                   </td>
                   <td style={tdStyle}>
-                    <select value={u.role ?? ""} onChange={(e) => updateUserRow(u.id, { role: e.target.value })} style={{ ...inputStyle, background: "#1a1a1a" }}>
+                    <select
+                      value={u.role ?? ""}
+                      onChange={(e) => updateUserRow(u.id, { role: e.target.value })}
+                      style={{ ...inputStyle, background: "#1a1a1a" }}
+                    >
                       <option value="">{isArabic ? "اختَر" : "Select"}</option>
                       {roles.map((r: string) => (
-                        <option key={r} value={r}>{r}</option>
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
                       ))}
                     </select>
                   </td>
@@ -950,7 +1154,11 @@ function Step2Users(props: Step2UsersProps) {
                     </select>
                   </td>
                   <td style={tdStyle}>
-                    <button type="button" onClick={() => removeUserRow(u.id)} style={{ ...secondaryBtn, padding: "8px 12px" }}>
+                    <button
+                      type="button"
+                      onClick={() => removeUserRow(u.id)}
+                      style={{ ...secondaryBtn, padding: "8px 12px" }}
+                    >
                       {T.table.remove}
                     </button>
                   </td>
@@ -995,7 +1203,6 @@ function Step3Review({ T, data, isArabic }: Step3ReviewProps) {
     logoFile,
     markets,
     categories,
-    linkedUsersSelection,
     appStepsSelected,
     enableLocationCheck,
     requireBiometrics,
@@ -1023,7 +1230,6 @@ function Step3Review({ T, data, isArabic }: Step3ReviewProps) {
 
         <KV label={T.markets} value={markets.join(", ") || "-"} />
         <KV label={T.categories} value={categories.join(", ") || "-"} />
-        <KV label={T.linkedUsersPick} value={linkedUsersSelection.join(", ") || "-"} />
         <KV label={T.appSteps} value={appStepsSelected.join(", ") || "-"} />
 
         <KV label={T.enableLocation} value={enableLocationCheck === "yes" ? T.yes : T.no} />
