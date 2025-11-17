@@ -400,51 +400,76 @@ export default function AddClientWizardMock() {
     setStep((s) => prevStep(s));
   }
 
-  // ====== حفظ في جدول client + ClientFeatures + ملفات ======
+   // ====== حفظ في جدول client + ClientFeatures + ملفات ======
   async function onCreateMock(e: FormEvent) {
-  e.preventDefault();
+    e.preventDefault();
 
-  const client_code = (code || "").toString().trim();
-  const nameBoth = (name || "").toString().trim();
+    const client_code = (code || "").toString().trim();
+    const nameBoth = (name || "").toString().trim();
 
-  if (!client_code || !nameBoth) {
-    setToast(isArabic ? "أدخل كود العميل والاسم" : "Enter client code and name");
-    return;
-  }
-  if (!nationalFile) {
-    setToast(isArabic ? "أرفِق الملف الوطني" : "Attach national file");
-    return;
-  }
+    if (!client_code || !nameBoth) {
+      setToast(isArabic ? "أدخل كود العميل والاسم" : "Enter client code and name");
+      return;
+    }
+    if (!nationalFile) {
+      setToast(isArabic ? "أرفِق الملف الوطني" : "Attach national file");
+      return;
+    }
 
-  try {
-    setSaving(true);
-    setToast("");
+    try {
+      setSaving(true);
+      setToast("");
 
-    // ... هنا تحويل الأسواق / الفئات لـ IDs لو أنت عاملها
+      // 1) تحويل الأسواق / الفئات المختارة إلى UUIDs من الجداول
+      let marketIds: string[] = [];
+      if (markets.length) {
+        const { data: marketRows, error: marketsError } = await supabase
+          .from("Markets")
+          .select("id, store")
+          .in("store", markets);
 
-    const payload = {
-      name: nameBoth,
-      name_ar: nameBoth,
-      code: client_code || null,
-      tax_number: taxNumber || null,
-      commercial_number: commercialNumber || null,
-      national_address: nationalAddress || null,
-      address: address || null,
+        if (marketsError) throw marketsError;
 
-      // ⬅⬅ الربط بتاع الـ Yes/No
-      enable_location_check: enableLocationCheck === "yes",
-      require_biometrics: requireBiometrics === "yes",
-      activate_users: activateUsers === "yes",
+        marketIds =
+          marketRows?.map((m: { id: string; store: string | null }) => m.id) ?? [];
+      }
 
-      markets: marketIds,      // لو بتستخدم IDs
-      categories: categoryIds, // لو بتستخدم IDs
-    };
+      let categoryIds: string[] = [];
+      if (categories.length) {
+        const { data: catRows, error: catsError } = await supabase
+          .from("categories")
+          .select("id, name")
+          .in("name", categories);
 
-    const { data: inserted, error: insertError } = await supabase
-      .from("client")
-      .insert(payload)
-      .select("id")
-      .single();
+        if (catsError) throw catsError;
+
+        categoryIds =
+          catRows?.map((c: { id: string; name: string | null }) => c.id) ?? [];
+      }
+
+      // 2) إنشاء العميل في جدول client
+      const payload = {
+        name: nameBoth,
+        name_ar: nameBoth,
+        code: client_code || null,
+        tax_number: taxNumber || null,
+        commercial_number: commercialNumber || null,
+        national_address: nationalAddress || null,
+        address: address || null,
+
+        enable_location_check: enableLocationCheck === "yes",
+        require_biometrics: requireBiometrics === "yes",
+        activate_users: activateUsers === "yes",
+
+        markets: marketIds,
+        categories: categoryIds,
+      };
+
+      const { data: inserted, error: insertError } = await supabase
+        .from("client")
+        .insert(payload)
+        .select("id")
+        .single();
 
       if (insertError || !inserted) {
         throw insertError || new Error("Insert failed");
@@ -453,13 +478,14 @@ export default function AddClientWizardMock() {
       const clientId: string = inserted.id;
 
       // 3) رفع الملفات على bucket clients-files
-      const [nationalUrl, taxUrl, commercialUrl, agreementUrl, logoUrl] = await Promise.all([
-        uploadClientFile(clientId, nationalFile, "national"),
-        uploadClientFile(clientId, taxFile, "tax"),
-        uploadClientFile(clientId, commercialFile, "commercial"),
-        uploadClientFile(clientId, agreementFile, "agreement"),
-        uploadClientFile(clientId, logoFile, "logo"),
-      ]);
+      const [nationalUrl, taxUrl, commercialUrl, agreementUrl, logoUrl] =
+        await Promise.all([
+          uploadClientFile(clientId, nationalFile, "national"),
+          uploadClientFile(clientId, taxFile, "tax"),
+          uploadClientFile(clientId, commercialFile, "commercial"),
+          uploadClientFile(clientId, agreementFile, "agreement"),
+          uploadClientFile(clientId, logoFile, "logo"),
+        ]);
 
       const { error: updateFilesError } = await supabase
         .from("client")
@@ -487,19 +513,20 @@ export default function AddClientWizardMock() {
           .upsert(featuresPayload, { onConflict: "client_id,feature_key" });
 
         if (featError) throw featError;
-        // التريجر sync_client_app_steps_json() هيتكفل بتحديث client.app_steps
       }
 
       setToast(T.saveToast);
-      // تقدر تغيّر المسار اللي بعد الحفظ لو حابب
+      // ممكن بعدين تعمل redirect لو حابب
       // router.push("/super-admin/clients");
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setToast(err?.message || "Error while saving client");
+      const msg = err instanceof Error ? err.message : "Error while saving client";
+      setToast(msg);
     } finally {
       setSaving(false);
     }
   }
+
 
   // ====== الـ UI ======
   return (
