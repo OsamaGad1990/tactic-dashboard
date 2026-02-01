@@ -202,12 +202,19 @@ export async function changePassword(newPassword: string): Promise<AuthResult> {
         return { error: 'network_error' };
     }
 
-    // Update user status from 'pending' to 'active'
+    // Update user status from 'pending' to 'active' and get portal role
     if (data.user) {
-        await supabase
+        const { data: account } = await supabase
             .from('accounts')
-            .update({ status: 'active' })
-            .eq('id', data.user.id);
+            .update({ account_status: 'active' })
+            .eq('auth_user_id', data.user.id)
+            .select('portal_role')
+            .single();
+
+        return {
+            success: true,
+            portalRole: (account?.portal_role as PortalRole) ?? 'none'
+        };
     }
 
     return { success: true };

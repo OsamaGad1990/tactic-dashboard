@@ -66,14 +66,16 @@ export function DashboardHeader({ userName, userRole, avatarUrl, onMenuToggle }:
                 </button>
 
                 {mounted ? (
-                    <Image
-                        src="/logo.png"
-                        alt={t('company')}
-                        width={120}
-                        height={36}
-                        priority
-                        className="h-8 w-auto object-contain"
-                    />
+                    <a href={`/${locale}/dashboard`} className="cursor-pointer">
+                        <Image
+                            src="/logo.png"
+                            alt={t('company')}
+                            width={120}
+                            height={36}
+                            priority
+                            className="h-8 w-auto object-contain"
+                        />
+                    </a>
                 ) : (
                     <div className="flex items-center gap-3">
                         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">

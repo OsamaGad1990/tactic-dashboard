@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { changePasswordSchema } from '@/lib/validations/auth';
 import { changePassword } from '@/lib/actions/auth';
+import { getDashboardRoute } from '@/lib/types/user';
 import { z } from 'zod';
 
 type ChangePasswordFormValues = z.input<typeof changePasswordSchema>;
@@ -55,8 +56,9 @@ export function ChangePasswordForm() {
             }
 
             if (result.success) {
-                // Redirect to dashboard after successful password change
-                router.push(`/${locale}/dashboard`);
+                // Redirect to role-based dashboard after successful password change
+                const dashboardPath = getDashboardRoute(result.portalRole ?? 'none', locale);
+                router.push(dashboardPath);
                 router.refresh();
             }
         } catch {
