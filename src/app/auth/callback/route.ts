@@ -5,6 +5,16 @@ export async function GET(request: Request) {
     const { searchParams, origin } = new URL(request.url);
     const code = searchParams.get('code');
     const next = searchParams.get('next') ?? '/ar/dashboard';
+    const errorCode = searchParams.get('error_code');
+    const errorDescription = searchParams.get('error_description');
+
+    // Handle Supabase error redirects (e.g., expired OTP)
+    if (errorCode) {
+        const errorMessage = errorCode === 'otp_expired'
+            ? 'link_expired'
+            : 'auth_error';
+        return NextResponse.redirect(`${origin}/ar/login?error=${errorMessage}`);
+    }
 
     if (code) {
         const supabase = await createClient();
@@ -22,9 +32,12 @@ export async function GET(request: Request) {
             } else {
                 return NextResponse.redirect(`${origin}${next}`);
             }
+        } else {
+            // Auth exchange failed
+            return NextResponse.redirect(`${origin}/ar/login?error=auth_error`);
         }
     }
 
-    // Return to login on error
-    return NextResponse.redirect(`${origin}/ar/login?error=auth_error`);
+    // No code provided
+    return NextResponse.redirect(`${origin}/ar/login?error=invalid_link`);
 }
