@@ -1,0 +1,56 @@
+{
+    "Metadata": {
+        "title": "تكتيك بورتال",
+        "description": "لوحة التحكم الإدارية"
+    },
+    "Auth": {
+        "welcome_back": "مرحباً بعودتك",
+        "login_subtitle": "أدخل بياناتك للدخول إلى لوحة القيادة",
+        "email_label": "البريد الإلكتروني",
+        "email_placeholder": "name@tactic.com",
+        "password_label": "كلمة المرور",
+        "password_placeholder": "••••••••",
+        "show_password": "إظهار كلمة المرور",
+        "hide_password": "إخفاء كلمة المرور",
+        "remember_me": "تذكرني",
+        "forgot_password": "نسيت كلمة المرور؟",
+        "login_button": "تسجيل الدخول",
+        "logging_in": "جاري الدخول...",
+        "or_continue_with": "أو تابع بواسطة",
+        "no_account": "ليس لديك حساب؟",
+        "contact_admin": "تواصل مع المسؤول"
+    },
+    "Validation": {
+        "email_required": "البريد الإلكتروني مطلوب",
+        "email_invalid": "صيغة البريد الإلكتروني غير صحيحة",
+        "password_required": "كلمة المرور مطلوبة",
+        "password_min": "كلمة المرور يجب أن تكون 6 أحرف على الأقل"
+    },
+    "Errors": {
+        "invalid_credentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة",
+        "network_error": "خطأ في الاتصال، حاول مرة أخرى",
+        "too_many_attempts": "محاولات كثيرة، حاول لاحقاً"
+    },
+    "Theme": {
+        "toggle_mode": "تبديل الوضع",
+        "light": "فاتح",
+        "dark": "داكن",
+        "system": "النظام"
+    },
+    "Language": {
+        "switch": "English",
+        "current": "العربية"
+    },
+    "Common": {
+        "loading": "جاري التحميل...",
+        "copyright": "جميع الحقوق محفوظة",
+        "year": "2026",
+        "company": "تكتيك"
+    },
+    "Header": {
+        "dashboard": "لوحة التحكم",
+        "settings": "الإعدادات",
+        "profile": "الملف الشخصي",
+        "logout": "تسجيل الخروج"
+    }
+}

@@ -1,0 +1,56 @@
+{
+    "Metadata": {
+        "title": "Tactic Portal",
+        "description": "Admin Dashboard"
+    },
+    "Auth": {
+        "welcome_back": "Welcome Back",
+        "login_subtitle": "Enter your credentials to access the dashboard",
+        "email_label": "Email Address",
+        "email_placeholder": "name@tactic.com",
+        "password_label": "Password",
+        "password_placeholder": "••••••••",
+        "show_password": "Show password",
+        "hide_password": "Hide password",
+        "remember_me": "Remember me",
+        "forgot_password": "Forgot password?",
+        "login_button": "Sign In",
+        "logging_in": "Signing in...",
+        "or_continue_with": "Or continue with",
+        "no_account": "Don't have an account?",
+        "contact_admin": "Contact administrator"
+    },
+    "Validation": {
+        "email_required": "Email is required",
+        "email_invalid": "Invalid email address",
+        "password_required": "Password is required",
+        "password_min": "Password must be at least 6 characters"
+    },
+    "Errors": {
+        "invalid_credentials": "Invalid email or password",
+        "network_error": "Connection error, please try again",
+        "too_many_attempts": "Too many attempts, try again later"
+    },
+    "Theme": {
+        "toggle_mode": "Toggle theme",
+        "light": "Light",
+        "dark": "Dark",
+        "system": "System"
+    },
+    "Language": {
+        "switch": "العربية",
+        "current": "English"
+    },
+    "Common": {
+        "loading": "Loading...",
+        "copyright": "All rights reserved",
+        "year": "2026",
+        "company": "Tactic"
+    },
+    "Header": {
+        "dashboard": "Dashboard",
+        "settings": "Settings",
+        "profile": "Profile",
+        "logout": "Logout"
+    }
+}
