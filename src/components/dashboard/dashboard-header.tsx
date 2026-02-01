@@ -65,15 +65,14 @@ export function DashboardHeader({ userName, userRole, avatarUrl, onMenuToggle }:
                     <Menu className="h-5 w-5" />
                 </button>
 
-                {/* Logo */}
                 {mounted ? (
                     <Image
                         src="/logo.png"
                         alt={t('company')}
-                        width={140}
-                        height={40}
+                        width={120}
+                        height={36}
                         priority
-                        className="h-9 w-auto"
+                        className="h-8 w-auto object-contain"
                     />
                 ) : (
                     <div className="flex items-center gap-3">
