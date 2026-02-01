@@ -75,7 +75,17 @@
         "admin_title": "Admin Dashboard",
         "operator_title": "Operator Dashboard",
         "company_title": "Company Dashboard",
-        "reports_title": "Reports"
+        "reports_title": "Reports",
+        "total_clients": "Total Clients",
+        "field_force": "Field Force",
+        "live_visits": "Live Visits Today",
+        "pending_approvals": "Pending Approvals",
+        "quick_actions": "Quick Actions",
+        "manage_companies": "Manage Companies",
+        "manage_users": "Manage Users",
+        "view_reports": "View Reports",
+        "system_settings": "System Settings",
+        "system_overview": "System overview and management"
     },
     "ForgotPassword": {
         "title": "Forgot Password",

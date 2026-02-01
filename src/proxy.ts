@@ -91,12 +91,20 @@ export async function proxy(request: NextRequest) {
 
     // Redirect authenticated users away from login
     if (user && isPublicPath) {
-        // Fetch user's portal role for correct redirect
+        // Fetch user's portal role and account status for correct redirect
         const { data: account } = await supabase
             .from('accounts')
-            .select('portal_role')
+            .select('portal_role, account_status')
             .eq('auth_user_id', user.id)
             .single();
+
+        // Pending users must change password first
+        if (account?.account_status === 'pending' || account?.account_status === 'must_change_password') {
+            if (pathnameWithoutLocale !== '/change-password') {
+                return NextResponse.redirect(new URL(`/${locale}/change-password`, request.url));
+            }
+            return intlResponse;
+        }
 
         const role = (account?.portal_role as PortalRole) || 'none';
         const dashboardPath = DEFAULT_DASHBOARD[role];
@@ -105,12 +113,17 @@ export async function proxy(request: NextRequest) {
 
     // Role-based dashboard access control
     if (user && pathnameWithoutLocale.startsWith('/dashboard')) {
-        // Fetch user's portal role
+        // Fetch user's portal role and account status
         const { data: account } = await supabase
             .from('accounts')
-            .select('portal_role')
+            .select('portal_role, account_status')
             .eq('auth_user_id', user.id)
             .single();
+
+        // Pending users must change password - redirect away from dashboard
+        if (account?.account_status === 'pending' || account?.account_status === 'must_change_password') {
+            return NextResponse.redirect(new URL(`/${locale}/change-password`, request.url));
+        }
 
         const userRole = (account?.portal_role as PortalRole) || 'none';
 

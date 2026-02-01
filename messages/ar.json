@@ -75,7 +75,17 @@
         "admin_title": "لوحة تحكم المدير",
         "operator_title": "لوحة تحكم المشغل",
         "company_title": "لوحة تحكم الشركة",
-        "reports_title": "التقارير"
+        "reports_title": "التقارير",
+        "total_clients": "إجمالي الشركات",
+        "field_force": "فريق الميدان",
+        "live_visits": "الزيارات الحية اليوم",
+        "pending_approvals": "الموافقات المعلقة",
+        "quick_actions": "إجراءات سريعة",
+        "manage_companies": "إدارة الشركات",
+        "manage_users": "إدارة المستخدمين",
+        "view_reports": "عرض التقارير",
+        "system_settings": "إعدادات النظام",
+        "system_overview": "نظرة عامة وإدارة النظام"
     },
     "ForgotPassword": {
         "title": "نسيت كلمة المرور",
