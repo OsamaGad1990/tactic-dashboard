@@ -18,7 +18,12 @@
         "logging_in": "جاري الدخول...",
         "or_continue_with": "أو تابع بواسطة",
         "no_account": "ليس لديك حساب؟",
-        "contact_admin": "تواصل مع المسؤول"
+        "contact_admin": "تواصل مع المسؤول",
+        "password_mode": "كلمة المرور",
+        "code_mode": "كود التفعيل",
+        "code_label": "كود التفعيل",
+        "code_placeholder": "000000",
+        "verify_code": "تحقق من الكود"
     },
     "Validation": {
         "identifier_required": "البريد الإلكتروني أو اسم المستخدم مطلوب",
@@ -27,13 +32,17 @@
         "email_invalid": "صيغة البريد الإلكتروني غير صحيحة",
         "password_required": "كلمة المرور مطلوبة",
         "password_min": "كلمة المرور يجب أن تكون 6 أحرف على الأقل",
-        "passwords_not_match": "كلمة المرور غير متطابقة"
+        "passwords_not_match": "كلمة المرور غير متطابقة",
+        "code_required": "كود التفعيل مطلوب",
+        "code_invalid": "الكود يجب أن يكون 6 أرقام"
     },
     "Errors": {
         "invalid_credentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة",
         "network_error": "خطأ في الاتصال، حاول مرة أخرى",
         "too_many_attempts": "محاولات كثيرة، حاول لاحقاً",
-        "email_not_found": "هذا البريد الإلكتروني غير مسجل لدينا"
+        "email_not_found": "هذا البريد الإلكتروني غير مسجل لدينا",
+        "invalid_code": "كود التفعيل غير صحيح أو منتهي الصلاحية",
+        "code_verified_password_required": "تم التحقق من الكود. يرجى تعيين كلمة المرور عبر رابط إعادة التعيين."
     },
     "Theme": {
         "toggle_mode": "تبديل الوضع",

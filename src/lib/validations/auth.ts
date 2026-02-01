@@ -23,6 +23,28 @@ export const loginSchema = z.object({
 
 export type LoginFormData = z.infer<typeof loginSchema>;
 
+// Code login form validation schema - for activation code login
+export const codeLoginSchema = z.object({
+    identifier: z
+        .string()
+        .min(1, 'identifier_required')
+        .refine(
+            (val) => {
+                const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+                const isUsername = val.length >= 3;
+                return isEmail || isUsername;
+            },
+            { message: 'identifier_invalid' }
+        ),
+    code: z
+        .string()
+        .min(1, 'code_required')
+        .length(6, 'code_invalid'),
+    rememberMe: z.boolean().default(false),
+});
+
+export type CodeLoginFormData = z.infer<typeof codeLoginSchema>;
+
 // Helper to check if identifier is email
 export function isEmail(identifier: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);

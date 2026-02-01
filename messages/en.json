@@ -18,7 +18,12 @@
         "logging_in": "Signing in...",
         "or_continue_with": "Or continue with",
         "no_account": "Don't have an account?",
-        "contact_admin": "Contact administrator"
+        "contact_admin": "Contact administrator",
+        "password_mode": "Password",
+        "code_mode": "Activation Code",
+        "code_label": "Activation Code",
+        "code_placeholder": "000000",
+        "verify_code": "Verify Code"
     },
     "Validation": {
         "identifier_required": "Email or username is required",
@@ -27,13 +32,17 @@
         "email_invalid": "Invalid email address",
         "password_required": "Password is required",
         "password_min": "Password must be at least 6 characters",
-        "passwords_not_match": "Passwords do not match"
+        "passwords_not_match": "Passwords do not match",
+        "code_required": "Activation code is required",
+        "code_invalid": "Code must be 6 digits"
     },
     "Errors": {
         "invalid_credentials": "Invalid email/username or password",
         "network_error": "Connection error, please try again",
         "too_many_attempts": "Too many attempts, try again later",
-        "email_not_found": "This email is not registered with us"
+        "email_not_found": "This email is not registered with us",
+        "invalid_code": "Invalid or expired activation code",
+        "code_verified_password_required": "Code verified. Please set your password via the reset link."
     },
     "Theme": {
         "toggle_mode": "Toggle theme",
