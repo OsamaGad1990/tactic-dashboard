@@ -8,7 +8,7 @@ const locales = ['ar', 'en'];
 const defaultLocale = 'ar';
 
 // Public paths that don't require authentication
-const publicPaths = ['/login', '/forgot-password', '/reset-password'];
+const publicPaths = ['/login', '/forgot-password', '/reset-password', '/change-password', '/auth'];
 
 // Role-based route access matrix
 type PortalRole = 'super_admin' | 'aggregator_admin' | 'client_admin' | 'reporter' | 'none';
