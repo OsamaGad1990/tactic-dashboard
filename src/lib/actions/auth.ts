@@ -2,21 +2,44 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { isEmail } from '@/lib/validations/auth';
+import { cookies } from 'next/headers';
 import { headers } from 'next/headers';
+
+// Session duration constants
+const SESSION_DURATION_REMEMBER = 60 * 60 * 24 * 30; // 30 days in seconds
+const SESSION_DURATION_DEFAULT = 60 * 60 * 24; // 1 day (browser session)
 
 export type AuthResult = {
     error?: string;
     success?: boolean;
+    requirePasswordChange?: boolean;
 };
 
-export async function signInWithEmail(
-    email: string,
+export async function signInWithIdentifier(
+    identifier: string,
     password: string,
     rememberMe: boolean
 ): Promise<AuthResult> {
     const supabase = await createClient();
 
-    const { error } = await supabase.auth.signInWithPassword({
+    let email = identifier;
+
+    // If not an email, lookup email by username
+    if (!isEmail(identifier)) {
+        const { data: userData, error: lookupError } = await supabase
+            .from('accounts')
+            .select('email')
+            .eq('username', identifier.toLowerCase())
+            .single();
+
+        if (lookupError || !userData?.email) {
+            return { error: 'invalid_credentials' };
+        }
+        email = userData.email;
+    }
+
+    const { error, data } = await supabase.auth.signInWithPassword({
         email,
         password,
     });
@@ -35,11 +58,43 @@ export async function signInWithEmail(
         return { error: 'network_error' };
     }
 
+    // Set remember me preference in cookie for middleware
+    if (data.session) {
+        const cookieStore = await cookies();
+        const sessionDuration = rememberMe ? SESSION_DURATION_REMEMBER : SESSION_DURATION_DEFAULT;
+
+        cookieStore.set('remember_me', rememberMe ? 'true' : 'false', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: sessionDuration,
+            path: '/',
+        });
+    }
+
+    // Check if user status is pending (first login - must change password)
+    if (data.user) {
+        const { data: account } = await supabase
+            .from('accounts')
+            .select('status')
+            .eq('id', data.user.id)
+            .single();
+
+        if (account?.status === 'pending') {
+            return { success: true, requirePasswordChange: true };
+        }
+    }
+
     return { success: true };
 }
 
 export async function signOut(): Promise<void> {
     const supabase = await createClient();
+    const cookieStore = await cookies();
+
+    // Clear remember me cookie
+    cookieStore.delete('remember_me');
+
     await supabase.auth.signOut();
     redirect('/login');
 }
@@ -48,4 +103,104 @@ export async function getUser() {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     return user;
+}
+
+export async function getUserWithProfile() {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { user: null, profile: null };
+    }
+
+    // Fetch user profile from accounts table
+    const { data: profile, error } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+    if (error) {
+        console.error('Error fetching user profile:', error);
+        return { user, profile: null };
+    }
+
+    return { user, profile };
+}
+
+export async function requestPasswordReset(email: string): Promise<AuthResult> {
+    const supabase = await createClient();
+    const headersList = await headers();
+    const origin = headersList.get('origin') || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+
+    // Check if email exists using RPC function (bypasses RLS)
+    const { data: emailExists, error: lookupError } = await supabase
+        .rpc('check_email_exists', { email_to_check: email.toLowerCase() });
+
+    if (lookupError || !emailExists) {
+        // Email doesn't exist in our database
+        return { error: 'email_not_found' };
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${origin}/auth/callback?next=/ar/reset-password`,
+    });
+
+    if (error) {
+        if (error.message.includes('Email rate limit exceeded')) {
+            return { error: 'too_many_attempts' };
+        }
+        return { error: 'network_error' };
+    }
+
+    return { success: true };
+}
+
+export async function resetPassword(password: string): Promise<AuthResult> {
+    const supabase = await createClient();
+
+    const { error } = await supabase.auth.updateUser({
+        password,
+    });
+
+    if (error) {
+        if (error.message.includes('Password should be at least')) {
+            return { error: 'password_too_weak' };
+        }
+        if (error.message.includes('same password')) {
+            return { error: 'same_password' };
+        }
+        return { error: 'network_error' };
+    }
+
+    return { success: true };
+}
+
+export async function changePassword(newPassword: string): Promise<AuthResult> {
+    const supabase = await createClient();
+
+    // Update password in Supabase Auth
+    const { error: authError, data } = await supabase.auth.updateUser({
+        password: newPassword,
+    });
+
+    if (authError) {
+        if (authError.message.includes('Password should be at least')) {
+            return { error: 'password_too_weak' };
+        }
+        if (authError.message.includes('same password')) {
+            return { error: 'same_password' };
+        }
+        return { error: 'network_error' };
+    }
+
+    // Update user status from 'pending' to 'active'
+    if (data.user) {
+        await supabase
+            .from('accounts')
+            .update({ status: 'active' })
+            .eq('id', data.user.id);
+    }
+
+    return { success: true };
 }

@@ -5,18 +5,19 @@ import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { loginSchema } from '@/lib/validations/auth';
-import { signInWithEmail } from '@/lib/actions/auth';
+import { signInWithIdentifier } from '@/lib/actions/auth';
 import { z } from 'zod';
 
 type LoginFormValues = z.input<typeof loginSchema>;
 
-type ValidationKey = 'email_required' | 'email_invalid' | 'password_required' | 'password_min';
+type ValidationKey = 'identifier_required' | 'identifier_invalid' | 'password_required' | 'password_min';
 type ErrorKey = 'invalid_credentials' | 'network_error' | 'too_many_attempts';
 
 export function LoginForm() {
@@ -38,7 +39,7 @@ export function LoginForm() {
     } = useForm<LoginFormValues>({
         resolver: zodResolver(loginSchema),
         defaultValues: {
-            email: '',
+            identifier: '',
             password: '',
             rememberMe: false,
         },
@@ -51,7 +52,7 @@ export function LoginForm() {
         setServerError(null);
 
         try {
-            const result = await signInWithEmail(data.email, data.password, data.rememberMe ?? false);
+            const result = await signInWithIdentifier(data.identifier, data.password, data.rememberMe ?? false);
 
             if (result.error) {
                 setServerError(result.error);
@@ -60,8 +61,12 @@ export function LoginForm() {
             }
 
             if (result.success) {
-                // Redirect to dashboard on success
-                router.push(`/${locale}/dashboard`);
+                // Check if user needs to change password (first login)
+                if (result.requirePasswordChange) {
+                    router.push(`/${locale}/change-password`);
+                } else {
+                    router.push(`/${locale}/dashboard`);
+                }
                 router.refresh();
             }
         } catch {
@@ -89,21 +94,21 @@ export function LoginForm() {
                 </div>
             )}
 
-            {/* Email Field */}
+            {/* Email/Username Field */}
             <div className="space-y-2">
-                <Label htmlFor="email">{t('email_label')}</Label>
+                <Label htmlFor="identifier">{t('identifier_label')}</Label>
                 <Input
-                    id="email"
-                    type="email"
-                    placeholder={t('email_placeholder')}
-                    autoComplete="email"
+                    id="identifier"
+                    type="text"
+                    placeholder={t('identifier_placeholder')}
+                    autoComplete="username"
                     disabled={isLoading}
                     className="h-12"
-                    {...register('email')}
+                    {...register('identifier')}
                 />
-                {errors.email && (
+                {errors.identifier && (
                     <p className="text-sm text-destructive">
-                        {getErrorMessage(errors.email.message)}
+                        {getErrorMessage(errors.identifier.message)}
                     </p>
                 )}
             </div>
@@ -157,20 +162,18 @@ export function LoginForm() {
                         {t('remember_me')}
                     </Label>
                 </div>
-                <Button
-                    type="button"
-                    variant="link"
-                    className="h-auto p-0 text-sm text-primary"
-                    disabled={isLoading}
+                <Link
+                    href={`/${locale}/forgot-password`}
+                    className="text-sm text-primary hover:underline"
                 >
                     {t('forgot_password')}
-                </Button>
+                </Link>
             </div>
 
             {/* Submit Button */}
             <Button
                 type="submit"
-                className="h-12 w-full text-base font-semibold"
+                className="h-12 w-full text-base font-semibold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-300"
                 disabled={isLoading}
             >
                 {isLoading ? (
@@ -179,7 +182,7 @@ export function LoginForm() {
                         {t('logging_in')}
                     </>
                 ) : (
-                    t('login_button')
+                    <span className="title-glow">{t('login_button')}</span>
                 )}
             </Button>
         </form>

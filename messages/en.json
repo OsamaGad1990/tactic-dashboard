@@ -6,8 +6,8 @@
     "Auth": {
         "welcome_back": "Welcome Back",
         "login_subtitle": "Enter your credentials to access the dashboard",
-        "email_label": "Email Address",
-        "email_placeholder": "name@tactic.com",
+        "identifier_label": "Email or Username",
+        "identifier_placeholder": "email@tactic.com or username",
         "password_label": "Password",
         "password_placeholder": "••••••••",
         "show_password": "Show password",
@@ -21,15 +21,19 @@
         "contact_admin": "Contact administrator"
     },
     "Validation": {
+        "identifier_required": "Email or username is required",
+        "identifier_invalid": "Enter a valid email or username (min 3 characters)",
         "email_required": "Email is required",
         "email_invalid": "Invalid email address",
         "password_required": "Password is required",
-        "password_min": "Password must be at least 6 characters"
+        "password_min": "Password must be at least 6 characters",
+        "passwords_not_match": "Passwords do not match"
     },
     "Errors": {
-        "invalid_credentials": "Invalid email or password",
+        "invalid_credentials": "Invalid email/username or password",
         "network_error": "Connection error, please try again",
-        "too_many_attempts": "Too many attempts, try again later"
+        "too_many_attempts": "Too many attempts, try again later",
+        "email_not_found": "This email is not registered with us"
     },
     "Theme": {
         "toggle_mode": "Toggle theme",
@@ -52,5 +56,61 @@
         "settings": "Settings",
         "profile": "Profile",
         "logout": "Logout"
+    },
+    "Dashboard": {
+        "title": "Dashboard",
+        "description": "System overview",
+        "welcome": "Welcome",
+        "role": "Role",
+        "total_users": "Total Users",
+        "active_sessions": "Active Sessions",
+        "analytics": "Analytics",
+        "coming_soon": "Coming soon",
+        "your_session": "Your current session",
+        "account_info": "Account Information",
+        "email": "Email",
+        "username": "Username",
+        "user_id": "User ID",
+        "unknown_user": "User"
+    },
+    "ForgotPassword": {
+        "title": "Forgot Password",
+        "description": "Reset your password",
+        "heading": "Forgot your password?",
+        "subtitle": "Enter your email and we'll send you a reset link",
+        "email_label": "Email Address",
+        "email_placeholder": "name@tactic.com",
+        "send_reset_link": "Send Reset Link",
+        "sending": "Sending...",
+        "back_to_login": "Back to Login",
+        "email_sent": "Email Sent!",
+        "email_sent_description": "Check your email for the password reset link"
+    },
+    "ChangePassword": {
+        "title": "Change Password",
+        "description": "Create a new password",
+        "heading": "Create a New Password",
+        "subtitle": "For your account security, please create a new password",
+        "new_password_label": "New Password",
+        "new_password_placeholder": "Enter a strong password",
+        "confirm_password_label": "Confirm Password",
+        "confirm_password_placeholder": "Re-enter your password",
+        "change_password_button": "Change Password",
+        "changing": "Changing..."
+    },
+    "ResetPassword": {
+        "title": "Reset Password",
+        "description": "Create a new password",
+        "heading": "Create a New Password",
+        "subtitle": "Enter a new password for your account",
+        "new_password_label": "New Password",
+        "new_password_placeholder": "Enter a strong password",
+        "confirm_password_label": "Confirm Password",
+        "confirm_password_placeholder": "Re-enter your password",
+        "reset_button": "Reset Password",
+        "resetting": "Resetting...",
+        "success": "Password Changed!",
+        "success_description": "You can now sign in with your new password",
+        "back_to_login": "Back to Login"
     }
 }

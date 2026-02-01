@@ -6,8 +6,8 @@
     "Auth": {
         "welcome_back": "مرحباً بعودتك",
         "login_subtitle": "أدخل بياناتك للدخول إلى لوحة القيادة",
-        "email_label": "البريد الإلكتروني",
-        "email_placeholder": "name@tactic.com",
+        "identifier_label": "البريد الإلكتروني أو اسم المستخدم",
+        "identifier_placeholder": "email@tactic.com أو username",
         "password_label": "كلمة المرور",
         "password_placeholder": "••••••••",
         "show_password": "إظهار كلمة المرور",
@@ -21,15 +21,19 @@
         "contact_admin": "تواصل مع المسؤول"
     },
     "Validation": {
+        "identifier_required": "البريد الإلكتروني أو اسم المستخدم مطلوب",
+        "identifier_invalid": "أدخل بريد إلكتروني صحيح أو اسم مستخدم (3 أحرف على الأقل)",
         "email_required": "البريد الإلكتروني مطلوب",
         "email_invalid": "صيغة البريد الإلكتروني غير صحيحة",
         "password_required": "كلمة المرور مطلوبة",
-        "password_min": "كلمة المرور يجب أن تكون 6 أحرف على الأقل"
+        "password_min": "كلمة المرور يجب أن تكون 6 أحرف على الأقل",
+        "passwords_not_match": "كلمة المرور غير متطابقة"
     },
     "Errors": {
         "invalid_credentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة",
         "network_error": "خطأ في الاتصال، حاول مرة أخرى",
-        "too_many_attempts": "محاولات كثيرة، حاول لاحقاً"
+        "too_many_attempts": "محاولات كثيرة، حاول لاحقاً",
+        "email_not_found": "هذا البريد الإلكتروني غير مسجل لدينا"
     },
     "Theme": {
         "toggle_mode": "تبديل الوضع",
@@ -52,5 +56,61 @@
         "settings": "الإعدادات",
         "profile": "الملف الشخصي",
         "logout": "تسجيل الخروج"
+    },
+    "Dashboard": {
+        "title": "لوحة التحكم",
+        "description": "نظرة عامة على النظام",
+        "welcome": "مرحباً",
+        "role": "الدور",
+        "total_users": "إجمالي المستخدمين",
+        "active_sessions": "الجلسات النشطة",
+        "analytics": "التحليلات",
+        "coming_soon": "قريباً",
+        "your_session": "جلستك الحالية",
+        "account_info": "معلومات الحساب",
+        "email": "البريد الإلكتروني",
+        "username": "اسم المستخدم",
+        "user_id": "معرف المستخدم",
+        "unknown_user": "مستخدم"
+    },
+    "ForgotPassword": {
+        "title": "نسيت كلمة المرور",
+        "description": "استعادة كلمة المرور",
+        "heading": "نسيت كلمة المرور؟",
+        "subtitle": "أدخل بريدك الإلكتروني وسنرسل لك رابط إعادة التعيين",
+        "email_label": "البريد الإلكتروني",
+        "email_placeholder": "name@tactic.com",
+        "send_reset_link": "إرسال رابط إعادة التعيين",
+        "sending": "جاري الإرسال...",
+        "back_to_login": "العودة لتسجيل الدخول",
+        "email_sent": "تم إرسال الرابط!",
+        "email_sent_description": "تحقق من بريدك الإلكتروني للحصول على رابط إعادة تعيين كلمة المرور"
+    },
+    "ChangePassword": {
+        "title": "تغيير كلمة المرور",
+        "description": "إنشاء كلمة مرور جديدة",
+        "heading": "أنشئ كلمة مرور جديدة",
+        "subtitle": "لأمان حسابك، يرجى إنشاء كلمة مرور جديدة",
+        "new_password_label": "كلمة المرور الجديدة",
+        "new_password_placeholder": "أدخل كلمة مرور قوية",
+        "confirm_password_label": "تأكيد كلمة المرور",
+        "confirm_password_placeholder": "أعد إدخال كلمة المرور",
+        "change_password_button": "تغيير كلمة المرور",
+        "changing": "جاري التغيير..."
+    },
+    "ResetPassword": {
+        "title": "إعادة تعيين كلمة المرور",
+        "description": "أنشئ كلمة مرور جديدة",
+        "heading": "أنشئ كلمة مرور جديدة",
+        "subtitle": "أدخل كلمة المرور الجديدة لحسابك",
+        "new_password_label": "كلمة المرور الجديدة",
+        "new_password_placeholder": "أدخل كلمة مرور قوية",
+        "confirm_password_label": "تأكيد كلمة المرور",
+        "confirm_password_placeholder": "أعد إدخال كلمة المرور",
+        "reset_button": "إعادة تعيين كلمة المرور",
+        "resetting": "جاري التعيين...",
+        "success": "تم تغيير كلمة المرور!",
+        "success_description": "يمكنك الآن تسجيل الدخول بكلمة المرور الجديدة",
+        "back_to_login": "العودة لتسجيل الدخول"
     }
 }
