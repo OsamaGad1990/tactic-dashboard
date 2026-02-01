@@ -137,8 +137,9 @@ export async function getUserWithProfile() {
 
 export async function requestPasswordReset(email: string): Promise<AuthResult> {
     const supabase = await createClient();
-    const headersList = await headers();
-    const origin = headersList.get('origin') || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+
+    // Use environment variable for consistent redirect URL
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://portal.tactici.com';
 
     // Check if email exists using RPC function (bypasses RLS)
     const { data: emailExists, error: lookupError } = await supabase
@@ -150,7 +151,7 @@ export async function requestPasswordReset(email: string): Promise<AuthResult> {
     }
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${origin}/auth/callback?next=/ar/reset-password`,
+        redirectTo: `${siteUrl}/auth/callback?next=/ar/reset-password`,
     });
 
     if (error) {
