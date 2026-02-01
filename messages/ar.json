@@ -71,7 +71,11 @@
         "email": "البريد الإلكتروني",
         "username": "اسم المستخدم",
         "user_id": "معرف المستخدم",
-        "unknown_user": "مستخدم"
+        "unknown_user": "مستخدم",
+        "admin_title": "لوحة تحكم المدير",
+        "operator_title": "لوحة تحكم المشغل",
+        "company_title": "لوحة تحكم الشركة",
+        "reports_title": "التقارير"
     },
     "ForgotPassword": {
         "title": "نسيت كلمة المرور",
@@ -112,5 +116,22 @@
         "success": "تم تغيير كلمة المرور!",
         "success_description": "يمكنك الآن تسجيل الدخول بكلمة المرور الجديدة",
         "back_to_login": "العودة لتسجيل الدخول"
+    },
+    "Sidebar": {
+        "overview": "نظرة عامة",
+        "companies": "الشركات",
+        "operators": "المشغلين",
+        "all_users": "جميع المستخدمين",
+        "audit_logs": "سجلات التدقيق",
+        "settings": "الإعدادات",
+        "my_companies": "شركاتي",
+        "teams": "الفرق",
+        "reports": "التقارير",
+        "my_team": "فريقي",
+        "products": "المنتجات",
+        "visits": "الزيارات",
+        "visit_reports": "تقارير الزيارات",
+        "analytics": "التحليلات",
+        "collapse": "طي"
     }
 }

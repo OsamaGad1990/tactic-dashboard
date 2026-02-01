@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { loginSchema } from '@/lib/validations/auth';
 import { signInWithIdentifier } from '@/lib/actions/auth';
+import { getDashboardRoute } from '@/lib/types/user';
 import { z } from 'zod';
 
 type LoginFormValues = z.input<typeof loginSchema>;
@@ -65,7 +66,9 @@ export function LoginForm() {
                 if (result.requirePasswordChange) {
                     router.push(`/${locale}/change-password`);
                 } else {
-                    router.push(`/${locale}/dashboard`);
+                    // Redirect to role-based dashboard
+                    const dashboardPath = getDashboardRoute(result.portalRole ?? 'none', locale);
+                    router.push(dashboardPath);
                 }
                 router.refresh();
             }

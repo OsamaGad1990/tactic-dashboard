@@ -71,7 +71,11 @@
         "email": "Email",
         "username": "Username",
         "user_id": "User ID",
-        "unknown_user": "User"
+        "unknown_user": "User",
+        "admin_title": "Admin Dashboard",
+        "operator_title": "Operator Dashboard",
+        "company_title": "Company Dashboard",
+        "reports_title": "Reports"
     },
     "ForgotPassword": {
         "title": "Forgot Password",
@@ -112,5 +116,22 @@
         "success": "Password Changed!",
         "success_description": "You can now sign in with your new password",
         "back_to_login": "Back to Login"
+    },
+    "Sidebar": {
+        "overview": "Overview",
+        "companies": "Companies",
+        "operators": "Operators",
+        "all_users": "All Users",
+        "audit_logs": "Audit Logs",
+        "settings": "Settings",
+        "my_companies": "My Companies",
+        "teams": "Teams",
+        "reports": "Reports",
+        "my_team": "My Team",
+        "products": "Products",
+        "visits": "Visits",
+        "visit_reports": "Visit Reports",
+        "analytics": "Analytics",
+        "collapse": "Collapse"
     }
 }

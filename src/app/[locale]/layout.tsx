@@ -37,6 +37,10 @@ export default async function LocaleLayout({
 
     return (
         <html lang={locale} dir={direction} suppressHydrationWarning>
+            <head>
+                <link rel="icon" href="/logo.png" type="image/png" />
+                <link rel="apple-touch-icon" href="/logo.png" />
+            </head>
             <body
                 className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-background font-sans antialiased`}
             >

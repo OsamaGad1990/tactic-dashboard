@@ -10,6 +10,25 @@ const defaultLocale = 'ar';
 // Public paths that don't require authentication
 const publicPaths = ['/login', '/forgot-password', '/reset-password'];
 
+// Role-based route access matrix
+type PortalRole = 'super_admin' | 'aggregator_admin' | 'client_admin' | 'reporter' | 'none';
+
+const ROLE_ROUTES: Record<string, PortalRole[]> = {
+    '/dashboard/admin': ['super_admin'],
+    '/dashboard/operator': ['super_admin', 'aggregator_admin'],
+    '/dashboard/company': ['super_admin', 'aggregator_admin', 'client_admin'],
+    '/dashboard/reports': ['super_admin', 'aggregator_admin', 'client_admin', 'reporter'],
+};
+
+// Default dashboard per role
+const DEFAULT_DASHBOARD: Record<PortalRole, string> = {
+    super_admin: '/dashboard/admin',
+    aggregator_admin: '/dashboard/operator',
+    client_admin: '/dashboard/company',
+    reporter: '/dashboard/reports',
+    none: '/login',
+};
+
 // Create the intl middleware
 const intlMiddleware = createIntlMiddleware(routing);
 
@@ -17,7 +36,6 @@ export async function proxy(request: NextRequest) {
     // Handle Supabase auth code at root level
     const code = request.nextUrl.searchParams.get('code');
     if (code && request.nextUrl.pathname === '/') {
-        // Redirect to auth callback with the code
         const callbackUrl = new URL('/auth/callback', request.url);
         callbackUrl.searchParams.set('code', code);
         callbackUrl.searchParams.set('next', '/ar/reset-password');
@@ -26,13 +44,6 @@ export async function proxy(request: NextRequest) {
 
     // Create a response with intl middleware first
     let intlResponse = intlMiddleware(request);
-
-    // Clone request headers for Supabase
-    const supabaseResponse = NextResponse.next({
-        request: {
-            headers: request.headers,
-        },
-    });
 
     // Create Supabase client with cookie handling
     const supabase = createServerClient(
@@ -47,8 +58,6 @@ export async function proxy(request: NextRequest) {
                     cookiesToSet.forEach(({ name, value }) =>
                         request.cookies.set(name, value)
                     );
-
-                    // Also set cookies on intl response
                     cookiesToSet.forEach(({ name, value, options }) =>
                         intlResponse.cookies.set(name, value, options)
                     );
@@ -57,9 +66,8 @@ export async function proxy(request: NextRequest) {
         }
     );
 
-    // IMPORTANT: Refresh session before any checks
-    // This keeps the session alive and syncs server/client state
-    const { data: { user }, error } = await supabase.auth.getUser();
+    // Refresh session
+    const { data: { user } } = await supabase.auth.getUser();
 
     // Get the pathname without locale prefix
     const pathname = request.nextUrl.pathname;
@@ -67,6 +75,7 @@ export async function proxy(request: NextRequest) {
         (path, locale) => path.replace(new RegExp(`^/${locale}`), ''),
         pathname
     ) || '/';
+    const locale = pathname.split('/')[1] || defaultLocale;
 
     // Check if current path is public
     const isPublicPath = publicPaths.some(path =>
@@ -75,7 +84,6 @@ export async function proxy(request: NextRequest) {
 
     // Redirect unauthenticated users to login
     if (!user && !isPublicPath && pathnameWithoutLocale !== '/') {
-        const locale = pathname.split('/')[1] || defaultLocale;
         const loginUrl = new URL(`/${locale}/login`, request.url);
         loginUrl.searchParams.set('redirect', pathname);
         return NextResponse.redirect(loginUrl);
@@ -83,9 +91,46 @@ export async function proxy(request: NextRequest) {
 
     // Redirect authenticated users away from login
     if (user && isPublicPath) {
-        const locale = pathname.split('/')[1] || defaultLocale;
-        const dashboardUrl = new URL(`/${locale}/dashboard`, request.url);
-        return NextResponse.redirect(dashboardUrl);
+        // Fetch user's portal role for correct redirect
+        const { data: account } = await supabase
+            .from('accounts')
+            .select('portal_role')
+            .eq('auth_user_id', user.id)
+            .single();
+
+        const role = (account?.portal_role as PortalRole) || 'none';
+        const dashboardPath = DEFAULT_DASHBOARD[role];
+        return NextResponse.redirect(new URL(`/${locale}${dashboardPath}`, request.url));
+    }
+
+    // Role-based dashboard access control
+    if (user && pathnameWithoutLocale.startsWith('/dashboard')) {
+        // Fetch user's portal role
+        const { data: account } = await supabase
+            .from('accounts')
+            .select('portal_role')
+            .eq('auth_user_id', user.id)
+            .single();
+
+        const userRole = (account?.portal_role as PortalRole) || 'none';
+
+        // Check if user is trying to access a specific dashboard
+        for (const [routePath, allowedRoles] of Object.entries(ROLE_ROUTES)) {
+            if (pathnameWithoutLocale.startsWith(routePath)) {
+                if (!allowedRoles.includes(userRole)) {
+                    // Redirect to their correct dashboard
+                    const correctDashboard = DEFAULT_DASHBOARD[userRole];
+                    return NextResponse.redirect(new URL(`/${locale}${correctDashboard}`, request.url));
+                }
+                break;
+            }
+        }
+
+        // If accessing /dashboard directly, redirect to role-specific dashboard
+        if (pathnameWithoutLocale === '/dashboard' || pathnameWithoutLocale === '/dashboard/') {
+            const correctDashboard = DEFAULT_DASHBOARD[userRole];
+            return NextResponse.redirect(new URL(`/${locale}${correctDashboard}`, request.url));
+        }
     }
 
     return intlResponse;
@@ -93,10 +138,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
     matcher: [
-        // Match all pathnames except for
-        // - api routes
-        // - _next (Next.js internals)
-        // - static files (assets, images, etc.)
         '/((?!api|_next|.*\\..*).*)',
     ],
 };

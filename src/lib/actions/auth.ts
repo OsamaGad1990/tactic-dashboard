@@ -6,6 +6,8 @@ import { isEmail } from '@/lib/validations/auth';
 import { cookies } from 'next/headers';
 import { headers } from 'next/headers';
 
+import type { PortalRole } from '@/lib/types/user';
+
 // Session duration constants
 const SESSION_DURATION_REMEMBER = 60 * 60 * 24 * 30; // 30 days in seconds
 const SESSION_DURATION_DEFAULT = 60 * 60 * 24; // 1 day (browser session)
@@ -14,6 +16,7 @@ export type AuthResult = {
     error?: string;
     success?: boolean;
     requirePasswordChange?: boolean;
+    portalRole?: PortalRole;
 };
 
 export async function signInWithIdentifier(
@@ -72,20 +75,24 @@ export async function signInWithIdentifier(
         });
     }
 
-    // Check if user status is pending (first login - must change password)
+    // Check user account status and get portal role
     if (data.user) {
         const { data: account } = await supabase
             .from('accounts')
-            .select('status')
-            .eq('id', data.user.id)
+            .select('account_status, portal_role')
+            .eq('auth_user_id', data.user.id)
             .single();
 
-        if (account?.status === 'pending') {
-            return { success: true, requirePasswordChange: true };
+        // Check for pending status (first login - must change password)
+        if (account?.account_status === 'pending' || account?.account_status === 'must_change_password') {
+            return { success: true, requirePasswordChange: true, portalRole: account.portal_role };
         }
+
+        // Return success with portal role for dashboard redirect
+        return { success: true, portalRole: account?.portal_role ?? 'none' };
     }
 
-    return { success: true };
+    return { success: true, portalRole: 'none' };
 }
 
 export async function signOut(): Promise<void> {
