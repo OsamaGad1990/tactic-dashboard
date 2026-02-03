@@ -32,6 +32,10 @@
         "email_invalid": "Invalid email address",
         "password_required": "Password is required",
         "password_min": "Password must be at least 6 characters",
+        "password_min_8": "Password must be at least 8 characters",
+        "password_uppercase": "Must contain at least one uppercase letter",
+        "password_lowercase": "Must contain at least one lowercase letter",
+        "password_special": "Must contain at least one special character (e.g. @#$)",
         "passwords_not_match": "Passwords do not match",
         "code_required": "Activation code is required",
         "code_invalid": "Code must be 6 digits"
@@ -42,7 +46,8 @@
         "too_many_attempts": "Too many attempts, try again later",
         "email_not_found": "This email is not registered with us",
         "invalid_code": "Invalid or expired activation code",
-        "code_verified_password_required": "Code verified. Please set your password via the reset link."
+        "code_verified_password_required": "Code verified. Please set your password via the reset link.",
+        "password_compromised": "This password is too common and not secure, please choose a stronger unique password"
     },
     "Theme": {
         "toggle_mode": "Toggle theme",
@@ -59,6 +64,12 @@
         "copyright": "All rights reserved",
         "year": "2026",
         "company": "Tactic"
+    },
+    "Navigation": {
+        "dashboard": "Dashboard",
+        "settings": "Settings",
+        "profile": "Profile",
+        "logout": "Logout"
     },
     "Header": {
         "dashboard": "Dashboard",
@@ -119,7 +130,12 @@
         "confirm_password_label": "Confirm Password",
         "confirm_password_placeholder": "Re-enter your password",
         "change_password_button": "Change Password",
-        "changing": "Changing..."
+        "changing": "Changing...",
+        "password_requirements": "Password Requirements",
+        "req_length": "At least 8 characters",
+        "req_uppercase": "Uppercase letter (A-Z)",
+        "req_lowercase": "Lowercase letter (a-z)",
+        "req_special": "Special character (!@#$...)"
     },
     "ResetPassword": {
         "title": "Reset Password",
@@ -134,7 +150,12 @@
         "resetting": "Resetting...",
         "success": "Password Changed!",
         "success_description": "You can now sign in with your new password",
-        "back_to_login": "Back to Login"
+        "back_to_login": "Back to Login",
+        "password_requirements": "Password Requirements",
+        "req_length": "At least 8 characters",
+        "req_uppercase": "Uppercase letter (A-Z)",
+        "req_lowercase": "Lowercase letter (a-z)",
+        "req_special": "Special character (!@#$...)"
     },
     "Sidebar": {
         "overview": "Overview",

@@ -32,6 +32,10 @@
         "email_invalid": "صيغة البريد الإلكتروني غير صحيحة",
         "password_required": "كلمة المرور مطلوبة",
         "password_min": "كلمة المرور يجب أن تكون 6 أحرف على الأقل",
+        "password_min_8": "كلمة المرور يجب أن تكون 8 أحرف على الأقل",
+        "password_uppercase": "يجب أن تحتوي على حرف كبير واحد على الأقل",
+        "password_lowercase": "يجب أن تحتوي على حرف صغير واحد على الأقل",
+        "password_special": "يجب أن تحتوي على رمز خاص واحد على الأقل (مثل @#$)",
         "passwords_not_match": "كلمة المرور غير متطابقة",
         "code_required": "كود التفعيل مطلوب",
         "code_invalid": "الكود يجب أن يكون 6 أرقام"
@@ -42,7 +46,8 @@
         "too_many_attempts": "محاولات كثيرة، حاول لاحقاً",
         "email_not_found": "هذا البريد الإلكتروني غير مسجل لدينا",
         "invalid_code": "كود التفعيل غير صحيح أو منتهي الصلاحية",
-        "code_verified_password_required": "تم التحقق من الكود. يرجى تعيين كلمة المرور عبر رابط إعادة التعيين."
+        "code_verified_password_required": "تم التحقق من الكود. يرجى تعيين كلمة المرور عبر رابط إعادة التعيين.",
+        "password_compromised": "كلمة المرور هذه شائعة جداً وغير آمنة، اختر كلمة مرور أقوى وفريدة"
     },
     "Theme": {
         "toggle_mode": "تبديل الوضع",
@@ -59,6 +64,12 @@
         "copyright": "جميع الحقوق محفوظة",
         "year": "2026",
         "company": "تكتيك"
+    },
+    "Navigation": {
+        "dashboard": "لوحة التحكم",
+        "settings": "الإعدادات",
+        "profile": "الملف الشخصي",
+        "logout": "تسجيل الخروج"
     },
     "Header": {
         "dashboard": "لوحة التحكم",
@@ -119,7 +130,12 @@
         "confirm_password_label": "تأكيد كلمة المرور",
         "confirm_password_placeholder": "أعد إدخال كلمة المرور",
         "change_password_button": "تغيير كلمة المرور",
-        "changing": "جاري التغيير..."
+        "changing": "جاري التغيير...",
+        "password_requirements": "متطلبات كلمة المرور",
+        "req_length": "8 أحرف على الأقل",
+        "req_uppercase": "حرف كبير (A-Z)",
+        "req_lowercase": "حرف صغير (a-z)",
+        "req_special": "رمز خاص (!@#$...)"
     },
     "ResetPassword": {
         "title": "إعادة تعيين كلمة المرور",
@@ -134,7 +150,12 @@
         "resetting": "جاري التعيين...",
         "success": "تم تغيير كلمة المرور!",
         "success_description": "يمكنك الآن تسجيل الدخول بكلمة المرور الجديدة",
-        "back_to_login": "العودة لتسجيل الدخول"
+        "back_to_login": "العودة لتسجيل الدخول",
+        "password_requirements": "متطلبات كلمة المرور",
+        "req_length": "8 أحرف على الأقل",
+        "req_uppercase": "حرف كبير (A-Z)",
+        "req_lowercase": "حرف صغير (a-z)",
+        "req_special": "رمز خاص (!@#$...)"
     },
     "Sidebar": {
         "overview": "نظرة عامة",

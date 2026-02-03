@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Eye, EyeOff, Loader2, Lock, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Lock, CheckCircle, ArrowLeft, Circle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,8 +16,24 @@ import { z } from 'zod';
 
 type ResetPasswordFormValues = z.input<typeof changePasswordSchema>;
 
-type ValidationKey = 'password_required' | 'password_min' | 'passwords_not_match';
-type ErrorKey = 'network_error' | 'password_too_weak' | 'same_password';
+type ValidationKey = 'password_required' | 'password_min' | 'password_min_8' | 'password_uppercase' | 'password_lowercase' | 'password_special' | 'passwords_not_match';
+type ErrorKey = 'network_error' | 'password_too_weak' | 'same_password' | 'password_compromised';
+
+// Password requirement hint component
+function PasswordRequirement({ met, label }: { met: boolean; label: string }) {
+    return (
+        <div className="flex items-center gap-2">
+            {met ? (
+                <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+            ) : (
+                <Circle className="h-3.5 w-3.5 text-muted-foreground/50" />
+            )}
+            <span className={`text-xs ${met ? 'text-green-500' : 'text-muted-foreground'}`}>
+                {label}
+            </span>
+        </div>
+    );
+}
 
 export function ResetPasswordForm() {
     const t = useTranslations('ResetPassword');
@@ -34,6 +50,7 @@ export function ResetPasswordForm() {
     const {
         register,
         handleSubmit,
+        watch,
         formState: { errors },
     } = useForm<ResetPasswordFormValues>({
         resolver: zodResolver(changePasswordSchema),
@@ -42,6 +59,9 @@ export function ResetPasswordForm() {
             confirmPassword: '',
         },
     });
+
+    // Watch password for real-time validation hints
+    const passwordValue = watch('newPassword', '');
 
     const onSubmit: SubmitHandler<ResetPasswordFormValues> = async (data) => {
         setIsLoading(true);
@@ -139,6 +159,15 @@ export function ResetPasswordForm() {
                         {getErrorMessage(errors.newPassword.message)}
                     </p>
                 )}
+
+                {/* Password Requirements Hints */}
+                <div className="rounded-lg bg-muted/50 p-3 space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">{t('password_requirements')}</p>
+                    <PasswordRequirement met={passwordValue.length >= 8} label={t('req_length')} />
+                    <PasswordRequirement met={/[A-Z]/.test(passwordValue)} label={t('req_uppercase')} />
+                    <PasswordRequirement met={/[a-z]/.test(passwordValue)} label={t('req_lowercase')} />
+                    <PasswordRequirement met={/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(passwordValue)} label={t('req_special')} />
+                </div>
             </div>
 
             {/* Confirm Password */}

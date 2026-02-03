@@ -185,37 +185,56 @@ export async function resetPassword(password: string): Promise<AuthResult> {
 }
 
 export async function changePassword(newPassword: string): Promise<AuthResult> {
-    const supabase = await createClient();
+    try {
+        const supabase = await createClient();
 
-    // Update password in Supabase Auth
-    const { error: authError, data } = await supabase.auth.updateUser({
-        password: newPassword,
-    });
+        // Update password in Supabase Auth
+        const { error: authError, data } = await supabase.auth.updateUser({
+            password: newPassword,
+        });
 
-    if (authError) {
-        if (authError.message.includes('Password should be at least')) {
-            return { error: 'password_too_weak' };
+        if (authError) {
+            console.error('[changePassword] Supabase Auth Error:', authError.message, authError);
+            if (authError.message.includes('Password should be at least')) {
+                return { error: 'password_too_weak' };
+            }
+            if (authError.message.includes('same password')) {
+                return { error: 'same_password' };
+            }
+            if (authError.message.includes('New password should be different')) {
+                return { error: 'same_password' };
+            }
+            // Supabase checks against compromised password lists (HaveIBeenPwned)
+            if (authError.message.includes('known to be weak') || authError.message.includes('easy to guess')) {
+                return { error: 'password_compromised' };
+            }
+            return { error: 'network_error' };
         }
-        if (authError.message.includes('same password')) {
-            return { error: 'same_password' };
+
+        // Update user status from 'pending' to 'active' and get portal role
+        if (data.user) {
+            const { data: account, error: dbError } = await supabase
+                .from('accounts')
+                .update({ account_status: 'active' })
+                .eq('auth_user_id', data.user.id)
+                .select('portal_role')
+                .single();
+
+            if (dbError) {
+                console.error('[changePassword] Database Error:', dbError.message, dbError);
+                // Password was changed but status update failed - still return success
+                // The middleware will redirect properly on next request
+            }
+
+            return {
+                success: true,
+                portalRole: (account?.portal_role as PortalRole) ?? 'none'
+            };
         }
+
+        return { success: true };
+    } catch (error) {
+        console.error('[changePassword] Unexpected Error:', error);
         return { error: 'network_error' };
     }
-
-    // Update user status from 'pending' to 'active' and get portal role
-    if (data.user) {
-        const { data: account } = await supabase
-            .from('accounts')
-            .update({ account_status: 'active' })
-            .eq('auth_user_id', data.user.id)
-            .select('portal_role')
-            .single();
-
-        return {
-            success: true,
-            portalRole: (account?.portal_role as PortalRole) ?? 'none'
-        };
-    }
-
-    return { success: true };
 }

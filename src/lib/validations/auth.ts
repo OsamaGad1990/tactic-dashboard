@@ -60,12 +60,18 @@ export const forgotPasswordSchema = z.object({
 
 export type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>;
 
+// Password strength validation for change/reset password flows
+export const passwordStrengthSchema = z
+    .string()
+    .min(1, 'password_required')
+    .min(8, 'password_min_8')
+    .regex(/[A-Z]/, 'password_uppercase')
+    .regex(/[a-z]/, 'password_lowercase')
+    .regex(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/, 'password_special');
+
 // Change password schema (for first login)
 export const changePasswordSchema = z.object({
-    newPassword: z
-        .string()
-        .min(1, 'password_required')
-        .min(6, 'password_min'),
+    newPassword: passwordStrengthSchema,
     confirmPassword: z
         .string()
         .min(1, 'password_required'),
