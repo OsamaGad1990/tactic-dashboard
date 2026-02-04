@@ -1,5 +1,5 @@
-// Client Stats Service - Fetch real stats from database
-import { createClient } from '@/lib/supabase/server';
+// Client Stats Service - Optimized with Drizzle ORM (Single Query)
+import { db, client } from '@/lib/db';
 import { cache } from 'react';
 
 export interface ClientStats {
@@ -10,48 +10,35 @@ export interface ClientStats {
 }
 
 /**
- * Get client stats from database - cached per request
+ * Get all client stats in ONE optimized SQL query
+ * This replaces 4 separate REST API calls with 1 direct PostgreSQL query
  */
 export const getClientStats = cache(async (clientId: string): Promise<ClientStats> => {
-    const supabase = await createClient();
+    try {
+        // Single optimized query using subqueries
+        const result = await client`
+            SELECT 
+                (SELECT COUNT(*) FROM client_users WHERE client_id = ${clientId}::uuid)::int as team_members,
+                (SELECT COUNT(*) FROM client_markets WHERE client_id = ${clientId}::uuid)::int as markets,
+                (SELECT COUNT(*) FROM client_products WHERE client_id = ${clientId}::uuid)::int as products,
+                (SELECT COUNT(*) FROM visit_core WHERE client_id = ${clientId}::uuid AND created_at >= CURRENT_DATE)::int as today_visits
+        `;
 
-    // Get today's date for visits filter
-    const today = new Date().toISOString().split('T')[0];
+        const stats = result[0];
 
-    // Run all queries in parallel
-    const [teamResult, marketsResult, productsResult, visitsResult] = await Promise.all([
-        // Team members count
-        supabase
-            .from('client_users')
-            .select('id', { count: 'exact', head: true })
-            .eq('client_id', clientId),
-
-        // Active markets count
-        supabase
-            .from('client_markets')
-            .select('id', { count: 'exact', head: true })
-            .eq('client_id', clientId)
-            .eq('is_active', true),
-
-        // Products count
-        supabase
-            .from('client_products')
-            .select('id', { count: 'exact', head: true })
-            .eq('client_id', clientId)
-            .eq('is_active', true),
-
-        // Today's visits count from visit_core
-        supabase
-            .from('visit_core')
-            .select('id', { count: 'exact', head: true })
-            .eq('client_id', clientId)
-            .gte('created_at', today),
-    ]);
-
-    return {
-        teamMembers: teamResult.count ?? 0,
-        activeMarkets: marketsResult.count ?? 0,
-        products: productsResult.count ?? 0,
-        todayVisits: visitsResult.count ?? 0,
-    };
+        return {
+            teamMembers: stats?.team_members ?? 0,
+            activeMarkets: stats?.markets ?? 0,
+            products: stats?.products ?? 0,
+            todayVisits: stats?.today_visits ?? 0,
+        };
+    } catch (error) {
+        console.error('Failed to fetch client stats:', error);
+        return {
+            teamMembers: 0,
+            activeMarkets: 0,
+            products: 0,
+            todayVisits: 0,
+        };
+    }
 });
