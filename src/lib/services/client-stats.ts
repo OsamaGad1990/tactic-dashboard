@@ -34,7 +34,11 @@ export const getClientStats = cache(async (clientId: string): Promise<ClientStat
             todayVisits: stats?.today_visits ?? 0,
         };
     } catch (error) {
-        console.error('Failed to fetch client stats:', error);
+        console.error('Failed to fetch client stats:', {
+            error: error instanceof Error ? error.message : error,
+            clientId,
+            databaseUrl: process.env.DATABASE_URL ? 'SET' : 'NOT SET',
+        });
         return {
             teamMembers: 0,
             activeMarkets: 0,
