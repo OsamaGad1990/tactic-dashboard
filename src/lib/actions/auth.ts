@@ -17,6 +17,7 @@ export type AuthResult = {
     success?: boolean;
     requirePasswordChange?: boolean;
     portalRole?: PortalRole;
+    loggedOut?: boolean;
 };
 
 export async function signInWithIdentifier(
@@ -184,7 +185,7 @@ export async function resetPassword(password: string): Promise<AuthResult> {
     return { success: true };
 }
 
-export async function changePassword(newPassword: string): Promise<AuthResult> {
+export async function changePassword(newPassword: string, logoutAll: boolean = false): Promise<AuthResult> {
     try {
         const supabase = await createClient();
 
@@ -212,6 +213,7 @@ export async function changePassword(newPassword: string): Promise<AuthResult> {
         }
 
         // Update user status from 'pending' to 'active' and get portal role
+        let portalRole: PortalRole = 'none';
         if (data.user) {
             const { data: account, error: dbError } = await supabase
                 .from('accounts')
@@ -222,17 +224,18 @@ export async function changePassword(newPassword: string): Promise<AuthResult> {
 
             if (dbError) {
                 console.error('[changePassword] Database Error:', dbError.message, dbError);
-                // Password was changed but status update failed - still return success
-                // The middleware will redirect properly on next request
             }
 
-            return {
-                success: true,
-                portalRole: (account?.portal_role as PortalRole) ?? 'none'
-            };
+            portalRole = (account?.portal_role as PortalRole) ?? 'none';
         }
 
-        return { success: true };
+        // Logout from all sessions if requested
+        if (logoutAll) {
+            await supabase.auth.signOut({ scope: 'global' });
+            return { success: true, portalRole, loggedOut: true };
+        }
+
+        return { success: true, portalRole };
     } catch (error) {
         console.error('[changePassword] Unexpected Error:', error);
         return { error: 'network_error' };

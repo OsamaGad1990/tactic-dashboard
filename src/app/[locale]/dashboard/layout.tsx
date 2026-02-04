@@ -27,6 +27,7 @@ export default async function DashboardRootLayout({
             userName={user.fullName || user.username}
             userRole={user.portalRole}
             avatarUrl={user.avatarUrl}
+            userId={user.id}
         >
             {children}
         </DashboardLayout>

@@ -5,7 +5,7 @@ import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Loader2, Lock, CheckCircle, Circle } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Lock, CheckCircle, Circle, LogOut, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,6 +35,48 @@ function PasswordRequirement({ met, label }: { met: boolean; label: string }) {
     );
 }
 
+// Session option component
+function SessionOption({
+    selected,
+    onClick,
+    icon: Icon,
+    title,
+    description
+}: {
+    selected: boolean;
+    onClick: () => void;
+    icon: React.ElementType;
+    title: string;
+    description: string;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={`flex items-start gap-3 w-full p-3 rounded-lg border transition-all text-start ${selected
+                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                    : 'border-border hover:bg-muted/50'
+                }`}
+        >
+            <div className={`p-2 rounded-full ${selected ? 'bg-primary/10' : 'bg-muted'}`}>
+                <Icon className={`h-4 w-4 ${selected ? 'text-primary' : 'text-muted-foreground'}`} />
+            </div>
+            <div className="flex-1">
+                <p className={`text-sm font-medium ${selected ? 'text-primary' : 'text-foreground'}`}>
+                    {title}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                    {description}
+                </p>
+            </div>
+            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${selected ? 'border-primary' : 'border-muted-foreground/30'
+                }`}>
+                {selected && <div className="w-2 h-2 rounded-full bg-primary" />}
+            </div>
+        </button>
+    );
+}
+
 export function ChangePasswordForm() {
     const t = useTranslations('ChangePassword');
     const tValidation = useTranslations('Validation');
@@ -45,6 +87,7 @@ export function ChangePasswordForm() {
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [serverError, setServerError] = useState<string | null>(null);
+    const [logoutAll, setLogoutAll] = useState(false);
 
     const {
         register,
@@ -67,7 +110,7 @@ export function ChangePasswordForm() {
         setServerError(null);
 
         try {
-            const result = await changePassword(data.newPassword);
+            const result = await changePassword(data.newPassword, logoutAll);
 
             if (result.error) {
                 setServerError(result.error);
@@ -76,9 +119,14 @@ export function ChangePasswordForm() {
             }
 
             if (result.success) {
-                // Redirect to role-based dashboard after successful password change
-                const dashboardPath = getDashboardRoute(result.portalRole ?? 'none', locale);
-                router.push(dashboardPath);
+                if (result.loggedOut) {
+                    // Redirect to login if logged out from all sessions
+                    router.push(`/${locale}/login`);
+                } else {
+                    // Redirect to role-based dashboard after successful password change
+                    const dashboardPath = getDashboardRoute(result.portalRole ?? 'none', locale);
+                    router.push(dashboardPath);
+                }
                 router.refresh();
             }
         } catch {
@@ -185,6 +233,27 @@ export function ChangePasswordForm() {
                         {getErrorMessage(errors.confirmPassword.message)}
                     </p>
                 )}
+            </div>
+
+            {/* Session Options */}
+            <div className="space-y-2">
+                <Label>{t('session_options')}</Label>
+                <div className="space-y-2">
+                    <SessionOption
+                        selected={!logoutAll}
+                        onClick={() => setLogoutAll(false)}
+                        icon={Monitor}
+                        title={t('keep_sessions')}
+                        description={t('keep_sessions_desc')}
+                    />
+                    <SessionOption
+                        selected={logoutAll}
+                        onClick={() => setLogoutAll(true)}
+                        icon={LogOut}
+                        title={t('logout_all_sessions')}
+                        description={t('logout_all_sessions_desc')}
+                    />
+                </div>
             </div>
 
             <Button

@@ -75,12 +75,18 @@
         "dashboard": "لوحة التحكم",
         "settings": "الإعدادات",
         "profile": "الملف الشخصي",
-        "logout": "تسجيل الخروج"
+        "logout": "تسجيل الخروج",
+        "change_avatar": "تغيير الصورة",
+        "uploading": "جاري الرفع...",
+        "delete_avatar": "حذف الصورة",
+        "deleting": "جاري الحذف...",
+        "confirm_delete_avatar": "هل أنت متأكد من حذف صورتك الشخصية؟"
     },
     "Dashboard": {
         "title": "لوحة التحكم",
         "description": "نظرة عامة على النظام",
         "welcome": "مرحباً",
+        "welcome_message": "مرحباً بك",
         "role": "الدور",
         "total_users": "إجمالي المستخدمين",
         "active_sessions": "الجلسات النشطة",
@@ -95,6 +101,7 @@
         "admin_title": "لوحة تحكم المدير",
         "operator_title": "لوحة تحكم المشغل",
         "company_title": "لوحة تحكم الشركة",
+        "company_subtitle": "إدارة فريقك ومنتجاتك",
         "reports_title": "التقارير",
         "total_clients": "إجمالي الشركات",
         "field_force": "فريق الميدان",
@@ -105,7 +112,22 @@
         "manage_users": "إدارة المستخدمين",
         "view_reports": "عرض التقارير",
         "system_settings": "إعدادات النظام",
-        "system_overview": "نظرة عامة وإدارة النظام"
+        "system_overview": "نظرة عامة وإدارة النظام",
+        "stats": {
+            "team_members": "أعضاء الفريق",
+            "active_markets": "الأسواق النشطة",
+            "products": "المنتجات",
+            "today_visits": "زيارات اليوم"
+        },
+        "actions": {
+            "team_members": "أعضاء الفريق",
+            "visit_schedule": "جدول الزيارات",
+            "reports": "التقارير",
+            "products": "المنتجات"
+        },
+        "change_password": "تغيير كلمة المرور",
+        "logout_all": "تسجيل خروج الكل",
+        "confirm_logout_all": "هل أنت متأكد من تسجيل الخروج من جميع الأجهزة؟"
     },
     "ForgotPassword": {
         "title": "نسيت كلمة المرور",
@@ -135,7 +157,12 @@
         "req_length": "8 أحرف على الأقل",
         "req_uppercase": "حرف كبير (A-Z)",
         "req_lowercase": "حرف صغير (a-z)",
-        "req_special": "رمز خاص (!@#$...)"
+        "req_special": "رمز خاص (!@#$...)",
+        "session_options": "خيارات الجلسة",
+        "keep_sessions": "الإبقاء على الجلسات الحالية",
+        "keep_sessions_desc": "ستظل مسجل الدخول على جميع الأجهزة",
+        "logout_all_sessions": "تسجيل الخروج من جميع الأجهزة",
+        "logout_all_sessions_desc": "سيتم تسجيل خروجك من جميع الأجهزة الأخرى"
     },
     "ResetPassword": {
         "title": "إعادة تعيين كلمة المرور",

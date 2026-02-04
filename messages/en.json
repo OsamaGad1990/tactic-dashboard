@@ -75,12 +75,18 @@
         "dashboard": "Dashboard",
         "settings": "Settings",
         "profile": "Profile",
-        "logout": "Logout"
+        "logout": "Logout",
+        "change_avatar": "Change Photo",
+        "uploading": "Uploading...",
+        "delete_avatar": "Delete Photo",
+        "deleting": "Deleting...",
+        "confirm_delete_avatar": "Are you sure you want to delete your profile photo?"
     },
     "Dashboard": {
         "title": "Dashboard",
         "description": "System overview",
         "welcome": "Welcome",
+        "welcome_message": "Welcome back",
         "role": "Role",
         "total_users": "Total Users",
         "active_sessions": "Active Sessions",
@@ -95,6 +101,7 @@
         "admin_title": "Admin Dashboard",
         "operator_title": "Operator Dashboard",
         "company_title": "Company Dashboard",
+        "company_subtitle": "Manage your team and products",
         "reports_title": "Reports",
         "total_clients": "Total Clients",
         "field_force": "Field Force",
@@ -105,7 +112,22 @@
         "manage_users": "Manage Users",
         "view_reports": "View Reports",
         "system_settings": "System Settings",
-        "system_overview": "System overview and management"
+        "system_overview": "System overview and management",
+        "stats": {
+            "team_members": "Team Members",
+            "active_markets": "Active Markets",
+            "products": "Products",
+            "today_visits": "Today's Visits"
+        },
+        "actions": {
+            "team_members": "Team Members",
+            "visit_schedule": "Visit Schedule",
+            "reports": "Reports",
+            "products": "Products"
+        },
+        "change_password": "Change Password",
+        "logout_all": "Logout All",
+        "confirm_logout_all": "Are you sure you want to logout from all devices?"
     },
     "ForgotPassword": {
         "title": "Forgot Password",
@@ -135,7 +157,12 @@
         "req_length": "At least 8 characters",
         "req_uppercase": "Uppercase letter (A-Z)",
         "req_lowercase": "Lowercase letter (a-z)",
-        "req_special": "Special character (!@#$...)"
+        "req_special": "Special character (!@#$...)",
+        "session_options": "Session Options",
+        "keep_sessions": "Keep current sessions",
+        "keep_sessions_desc": "Stay logged in on all your devices",
+        "logout_all_sessions": "Logout from all devices",
+        "logout_all_sessions_desc": "Sign out from all other devices"
     },
     "ResetPassword": {
         "title": "Reset Password",

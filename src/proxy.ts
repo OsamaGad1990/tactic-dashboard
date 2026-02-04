@@ -15,9 +15,9 @@ type PortalRole = 'super_admin' | 'aggregator_admin' | 'client_admin' | 'reporte
 
 const ROLE_ROUTES: Record<string, PortalRole[]> = {
     '/dashboard/admin': ['super_admin'],
-    '/dashboard/operator': ['super_admin', 'aggregator_admin'],
-    '/dashboard/company': ['super_admin', 'aggregator_admin', 'client_admin'],
-    '/dashboard/reports': ['super_admin', 'aggregator_admin', 'client_admin', 'reporter'],
+    '/dashboard/operator': ['super_admin', 'aggregator_admin', 'reporter'],
+    '/dashboard/company': ['super_admin', 'aggregator_admin', 'client_admin', 'reporter'],
+    '/dashboard/reports': ['super_admin', 'reporter'],
 };
 
 // Default dashboard per role
@@ -89,15 +89,19 @@ export async function proxy(request: NextRequest) {
         return NextResponse.redirect(loginUrl);
     }
 
-    // Redirect authenticated users away from login
-    if (user && isPublicPath) {
-        // Fetch user's portal role and account status for correct redirect
-        const { data: account } = await supabase
+    // Fetch account data ONCE for authenticated users (reuse below)
+    let account: { portal_role: string | null; account_status: string | null } | null = null;
+    if (user) {
+        const { data } = await supabase
             .from('accounts')
             .select('portal_role, account_status')
             .eq('auth_user_id', user.id)
             .single();
+        account = data;
+    }
 
+    // Redirect authenticated users away from login (but allow change-password)
+    if (user && isPublicPath && pathnameWithoutLocale !== '/change-password') {
         // Pending users must change password first
         if (account?.account_status === 'pending' || account?.account_status === 'must_change_password') {
             if (pathnameWithoutLocale !== '/change-password') {
@@ -113,13 +117,6 @@ export async function proxy(request: NextRequest) {
 
     // Role-based dashboard access control
     if (user && pathnameWithoutLocale.startsWith('/dashboard')) {
-        // Fetch user's portal role and account status
-        const { data: account } = await supabase
-            .from('accounts')
-            .select('portal_role, account_status')
-            .eq('auth_user_id', user.id)
-            .single();
-
         // Pending users must change password - redirect away from dashboard
         if (account?.account_status === 'pending' || account?.account_status === 'must_change_password') {
             return NextResponse.redirect(new URL(`/${locale}/change-password`, request.url));

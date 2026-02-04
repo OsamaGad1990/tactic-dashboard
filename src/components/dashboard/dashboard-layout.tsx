@@ -12,9 +12,10 @@ interface DashboardLayoutProps {
     userName: string;
     userRole: PortalRole;
     avatarUrl?: string | null;
+    userId: string;
 }
 
-export function DashboardLayout({ children, userName, userRole, avatarUrl }: DashboardLayoutProps) {
+export function DashboardLayout({ children, userName, userRole, avatarUrl, userId }: DashboardLayoutProps) {
     const locale = useLocale();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const isRTL = locale === 'ar';
@@ -26,6 +27,7 @@ export function DashboardLayout({ children, userName, userRole, avatarUrl }: Das
                 userName={userName}
                 userRole={userRole}
                 avatarUrl={avatarUrl}
+                userId={userId}
                 onMenuToggle={() => setMobileMenuOpen(!mobileMenuOpen)}
             />
 

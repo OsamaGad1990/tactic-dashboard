@@ -1,12 +1,14 @@
 // Portal User Session - Fetch enriched user data from Supabase
 import { createClient } from '@/lib/supabase/server';
 import type { PortalUser, AccountRow } from '@/lib/types/user';
+import { cache } from 'react';
 
 /**
  * Get the current authenticated user's portal profile
  * Returns null if not authenticated or no account found
+ * Cached per request to prevent duplicate DB calls
  */
-export async function getPortalUser(): Promise<PortalUser | null> {
+export const getPortalUser = cache(async (): Promise<PortalUser | null> => {
     const supabase = await createClient();
 
     // Get authenticated user
@@ -72,7 +74,7 @@ export async function getPortalUser(): Promise<PortalUser | null> {
     };
 
     return portalUser;
-}
+});
 
 /**
  * Get accessible client IDs for a user
