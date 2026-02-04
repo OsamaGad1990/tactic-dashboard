@@ -1,5 +1,5 @@
 // Client Stats Service - Optimized with Drizzle ORM (Single Query)
-import { db, client } from '@/lib/db';
+import { getClient } from '@/lib/db';
 import { cache } from 'react';
 
 export interface ClientStats {
@@ -16,7 +16,8 @@ export interface ClientStats {
 export const getClientStats = cache(async (clientId: string): Promise<ClientStats> => {
     try {
         // Single optimized query using subqueries
-        const result = await client`
+        const sql = getClient();
+        const result = await sql`
             SELECT 
                 (SELECT COUNT(*) FROM client_users WHERE client_id = ${clientId}::uuid)::int as team_members,
                 (SELECT COUNT(*) FROM client_markets WHERE client_id = ${clientId}::uuid)::int as markets,
