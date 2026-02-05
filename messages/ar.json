@@ -125,6 +125,27 @@
             "reports": "التقارير",
             "products": "المنتجات"
         },
+        "charts": {
+            "visitStatistics": "إحصائيات الزيارات",
+            "totalVisits": "إجمالي الزيارات",
+            "completedVisits": "مكتملة",
+            "incompleteVisits": "غير مكتملة",
+            "completedPercentage": "نسبة المكتملة",
+            "incompletePercentage": "نسبة الغير مكتملة",
+            "productTimeStatistics": "التوافر و وقت العمل",
+            "totalProducts": "إجمالي المنتجات",
+            "availablePercentage": "نسبة المتوفرة",
+            "unavailablePercentage": "نسبة الغير متوفرة",
+            "workTime": "وقت العمل",
+            "transitTime": "وقت الانتقال",
+            "updating": "جاري التحديث...",
+            "notificationStatistics": "إحصائيات الإشعارات",
+            "totalNotifications": "إجمالي الإشعارات",
+            "readPercentage": "نسبة القراءة",
+            "actionPercentage": "نسبة التنفيذ",
+            "avgActionTime": "متوسط وقت التنفيذ",
+            "avgPendingTime": "متوسط وقت الانتظار"
+        },
         "change_password": "تغيير كلمة المرور",
         "logout_all": "تسجيل خروج الكل",
         "confirm_logout_all": "هل أنت متأكد من تسجيل الخروج من جميع الأجهزة؟"
@@ -199,6 +220,31 @@
         "visits": "الزيارات",
         "visit_reports": "تقارير الزيارات",
         "analytics": "التحليلات",
-        "collapse": "طي"
+        "collapse": "طي",
+        "notifications": "الإشعارات",
+        "visit_requests": "طلبات الزيارة",
+        "yesterday_visits": "زيارات أمس",
+        "live_tracking": "التحركات لحظياً"
+    },
+    "filters": {
+        "title": "الفلاتر",
+        "subtitle": "تصفية بيانات لوحة التحكم",
+        "loading": "جاري تحميل الفلاتر...",
+        "from": "من",
+        "to": "إلى",
+        "dateRange": "الفترة الزمنية",
+        "chain": "السلسلة",
+        "allChains": "كل السلاسل",
+        "region": "المنطقة",
+        "allRegions": "كل المناطق",
+        "branch": "الفرع",
+        "allBranches": "كل الفروع",
+        "teamLeader": "قائد الفريق",
+        "allTeamLeaders": "كل قادة الفرق",
+        "fieldStaff": "الموظف الميداني",
+        "allFieldStaff": "كل الموظفين الميدانيين",
+        "reset": "إعادة تعيين",
+        "resetFilters": "إعادة تعيين كل الفلاتر",
+        "loadError": "فشل تحميل الفلاتر"
     }
 }

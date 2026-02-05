@@ -125,6 +125,27 @@
             "reports": "Reports",
             "products": "Products"
         },
+        "charts": {
+            "visitStatistics": "Visit Statistics",
+            "totalVisits": "Total Visits",
+            "completedVisits": "Completed",
+            "incompleteVisits": "Incomplete",
+            "completedPercentage": "Completed %",
+            "incompletePercentage": "Incomplete %",
+            "productTimeStatistics": "Products & Time",
+            "totalProducts": "Total Products",
+            "availablePercentage": "Available %",
+            "unavailablePercentage": "Unavailable %",
+            "workTime": "Work Time",
+            "transitTime": "Transit Time",
+            "updating": "Updating...",
+            "notificationStatistics": "Notification Statistics",
+            "totalNotifications": "Total Notifications",
+            "readPercentage": "Read %",
+            "actionPercentage": "Actioned %",
+            "avgActionTime": "Avg. Action Time",
+            "avgPendingTime": "Avg. Pending Time"
+        },
         "change_password": "Change Password",
         "logout_all": "Logout All",
         "confirm_logout_all": "Are you sure you want to logout from all devices?"
@@ -199,6 +220,31 @@
         "visits": "Visits",
         "visit_reports": "Visit Reports",
         "analytics": "Analytics",
-        "collapse": "Collapse"
+        "collapse": "Collapse",
+        "notifications": "Notifications",
+        "visit_requests": "Visit Requests",
+        "yesterday_visits": "Yesterday's Visits",
+        "live_tracking": "Live Tracking"
+    },
+    "filters": {
+        "title": "Filters",
+        "subtitle": "Refine your dashboard data",
+        "loading": "Loading filters...",
+        "from": "From",
+        "to": "To",
+        "dateRange": "Date Range",
+        "chain": "Chain",
+        "allChains": "All Chains",
+        "region": "Region",
+        "allRegions": "All Regions",
+        "branch": "Branch",
+        "allBranches": "All Branches",
+        "teamLeader": "Team Leader",
+        "allTeamLeaders": "All Team Leaders",
+        "fieldStaff": "Field Staff",
+        "allFieldStaff": "All Field Staff",
+        "reset": "Reset",
+        "resetFilters": "Reset all filters",
+        "loadError": "Failed to load filters"
     }
 }

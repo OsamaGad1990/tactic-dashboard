@@ -1,6 +1,8 @@
 import { getPortalUser } from '@/lib/supabase/portal-user';
 import { redirect } from 'next/navigation';
 import { DashboardLayout } from '@/components/dashboard/dashboard-layout';
+import { QueryProvider } from '@/lib/providers/QueryProvider';
+import { FilterProvider } from '@/lib/context/FilterContext';
 
 export default async function DashboardRootLayout({
     children,
@@ -29,7 +31,12 @@ export default async function DashboardRootLayout({
             avatarUrl={user.avatarUrl}
             userId={user.id}
         >
-            {children}
+            <QueryProvider>
+                <FilterProvider>
+                    {children}
+                </FilterProvider>
+            </QueryProvider>
         </DashboardLayout>
     );
 }
+

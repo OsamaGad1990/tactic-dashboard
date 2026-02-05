@@ -19,6 +19,10 @@ import {
     ChevronRight,
     LayoutDashboard,
     Factory,
+    Bell,
+    CalendarClock,
+    History,
+    MapPin,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -60,8 +64,10 @@ function getNavItems(role: PortalRole, locale: string, t: (key: string) => strin
             { label: t('overview'), href: `/${locale}/dashboard/company`, icon: <LayoutDashboard className="h-5 w-5" /> },
             { label: t('my_team'), href: `/${locale}/dashboard/company/team`, icon: <Users className="h-5 w-5" /> },
             { label: t('products'), href: `/${locale}/dashboard/company/products`, icon: <Package className="h-5 w-5" /> },
-            { label: t('visits'), href: `/${locale}/dashboard/company/visits`, icon: <ClipboardList className="h-5 w-5" /> },
-            { label: t('reports'), href: `/${locale}/dashboard/company/reports`, icon: <BarChart3 className="h-5 w-5" /> },
+            { label: t('notifications'), href: `/${locale}/dashboard/company/notifications`, icon: <Bell className="h-5 w-5" /> },
+            { label: t('visit_requests'), href: `/${locale}/dashboard/company/visit-requests`, icon: <CalendarClock className="h-5 w-5" /> },
+            { label: t('yesterday_visits'), href: `/${locale}/dashboard/company/yesterday-visits`, icon: <History className="h-5 w-5" /> },
+            { label: t('live_tracking'), href: `/${locale}/dashboard/company/live-tracking`, icon: <MapPin className="h-5 w-5" /> },
         );
     }
 
