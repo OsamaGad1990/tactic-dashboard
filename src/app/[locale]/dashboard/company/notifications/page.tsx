@@ -1,7 +1,10 @@
 import { getTranslations } from 'next-intl/server';
 import { getPortalUser } from '@/lib/supabase/portal-user';
+import { getUserClientId, getUserDivisionId } from '@/lib/services/client';
 import { redirect } from 'next/navigation';
 import { Bell } from 'lucide-react';
+import { getSentNotifications, getFieldUsers } from '@/lib/services/notifications-service';
+import { NotificationsPanel } from '@/components/notifications/NotificationsPanel';
 
 export async function generateMetadata({
     params,
@@ -29,6 +32,20 @@ export default async function NotificationsPage({
         redirect(`/${locale}/login`);
     }
 
+    const [clientId, divisionId] = await Promise.all([
+        getUserClientId(user.id),
+        getUserDivisionId(user.id),
+    ]);
+    if (!clientId) {
+        redirect(`/${locale}/login`);
+    }
+
+    // Fetch data in parallel — scoped by client_id + division_id
+    const [sentNotifications, fieldUsers] = await Promise.all([
+        getSentNotifications(clientId, divisionId),
+        getFieldUsers(clientId, divisionId),
+    ]);
+
     return (
         <div className="space-y-6">
             {/* Page Header */}
@@ -44,18 +61,8 @@ export default async function NotificationsPage({
                 </div>
             </div>
 
-            {/* Placeholder Content */}
-            <div className="rounded-xl border border-border bg-card/50 p-8 text-center">
-                <Bell className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                <h3 className="mt-4 text-lg font-medium">
-                    {locale === 'ar' ? 'قريباً' : 'Coming Soon'}
-                </h3>
-                <p className="mt-2 text-sm text-muted-foreground">
-                    {locale === 'ar'
-                        ? 'هذه الصفحة قيد التطوير'
-                        : 'This page is under development'}
-                </p>
-            </div>
+            {/* Notifications Panel */}
+            <NotificationsPanel sentNotifications={sentNotifications} fieldUsers={fieldUsers} />
         </div>
     );
 }

@@ -1,7 +1,12 @@
 import { getTranslations } from 'next-intl/server';
 import { getPortalUser } from '@/lib/supabase/portal-user';
+import { getUserClientId, getUserDivisionId } from '@/lib/services/client';
 import { redirect } from 'next/navigation';
-import { History } from 'lucide-react';
+import { History, MapPin } from 'lucide-react';
+import { getYesterdayVisits, computeYesterdayStats } from '@/lib/services/yesterday-visits-service';
+import { YesterdayVisitsPanel } from '@/components/yesterday-visits/YesterdayVisitsPanel';
+import { DashboardFilters } from '@/components/filters/DashboardFilters';
+import { ScopeProvider } from '@/lib/context/ScopeContext';
 
 export async function generateMetadata({
     params,
@@ -22,12 +27,45 @@ export default async function YesterdayVisitsPage({
 }) {
     const { locale } = await params;
     const t = await getTranslations({ locale, namespace: 'Sidebar' });
+    const isArabic = locale === 'ar';
 
-    // Get current user
     const user = await getPortalUser();
     if (!user) {
         redirect(`/${locale}/login`);
     }
+
+    const [clientId, divisionId] = await Promise.all([
+        getUserClientId(user.id),
+        getUserDivisionId(user.id),
+    ]);
+
+    if (!clientId) {
+        return (
+            <div className="space-y-6">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                        <History className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight">{t('yesterday_visits')}</h1>
+                        <p className="text-sm text-muted-foreground">
+                            {isArabic ? 'استعراض زيارات الأمس' : "Review yesterday's visits"}
+                        </p>
+                    </div>
+                </div>
+                <div className="rounded-xl border border-border bg-card/50 p-8 text-center">
+                    <MapPin className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                    <h3 className="mt-4 text-lg font-medium">
+                        {isArabic ? 'غير مرتبط بشركة' : 'No Company Association'}
+                    </h3>
+                </div>
+            </div>
+        );
+    }
+
+    // Fetch yesterday's visits from materialized view
+    const visits = await getYesterdayVisits(clientId, divisionId);
+    const stats = computeYesterdayStats(visits);
 
     return (
         <div className="space-y-6">
@@ -39,23 +77,16 @@ export default async function YesterdayVisitsPage({
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">{t('yesterday_visits')}</h1>
                     <p className="text-sm text-muted-foreground">
-                        {locale === 'ar' ? 'استعراض زيارات الأمس' : 'Review yesterday\'s visits'}
+                        {isArabic ? 'استعراض زيارات الأمس' : "Review yesterday's visits"}
                     </p>
                 </div>
             </div>
 
-            {/* Placeholder Content */}
-            <div className="rounded-xl border border-border bg-card/50 p-8 text-center">
-                <History className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                <h3 className="mt-4 text-lg font-medium">
-                    {locale === 'ar' ? 'قريباً' : 'Coming Soon'}
-                </h3>
-                <p className="mt-2 text-sm text-muted-foreground">
-                    {locale === 'ar'
-                        ? 'هذه الصفحة قيد التطوير'
-                        : 'This page is under development'}
-                </p>
-            </div>
+            {/* Global Filters + Visits Panel */}
+            <ScopeProvider clientId={clientId} divisionId={divisionId} managerAccountId={user.id}>
+                <DashboardFilters userAccountId={user.id} clientId={clientId} />
+                <YesterdayVisitsPanel visits={visits} stats={stats} />
+            </ScopeProvider>
         </div>
     );
 }

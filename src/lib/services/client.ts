@@ -113,6 +113,28 @@ export const getUserClientId = cache(async (accountId: string): Promise<string |
     }
 });
 
+/**
+ * Get division ID for current user - cached per request (Drizzle ORM)
+ */
+export const getUserDivisionId = cache(async (accountId: string): Promise<string | null> => {
+    try {
+        const portalRole = await db
+            .select({ divisionId: clientPortalUserRoles.divisionId })
+            .from(clientPortalUserRoles)
+            .where(eq(clientPortalUserRoles.accountId, accountId))
+            .limit(1);
+
+        if (portalRole.length > 0 && portalRole[0].divisionId) {
+            return portalRole[0].divisionId;
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Failed to fetch user division ID:', error);
+        return null;
+    }
+});
+
 export interface ClientRole {
     key: string;
     labelEn: string;

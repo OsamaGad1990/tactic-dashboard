@@ -3,6 +3,7 @@ import { getMessages, getLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { ThemeProvider } from '@/components/providers/theme-provider';
+import { ToastProvider } from '@/components/providers/toast-provider';
 import { routing } from '@/i18n/routing';
 import '@/app/globals.css';
 
@@ -46,7 +47,9 @@ export default async function LocaleLayout({
             >
                 <ThemeProvider>
                     <NextIntlClientProvider messages={messages}>
-                        {children}
+                        <ToastProvider>
+                            {children}
+                        </ToastProvider>
                     </NextIntlClientProvider>
                 </ThemeProvider>
             </body>

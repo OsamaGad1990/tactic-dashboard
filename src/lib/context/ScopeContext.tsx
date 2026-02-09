@@ -106,6 +106,7 @@ const ScopeContext = createContext<ScopeContextState | null>(null);
 interface ScopeProviderProps {
     children: React.ReactNode;
     clientId: string | null;
+    divisionId?: string | null;
     managerAccountId: string | null;
     dateFrom?: string | null;
     dateTo?: string | null;
@@ -114,6 +115,7 @@ interface ScopeProviderProps {
 export function ScopeProvider({
     children,
     clientId,
+    divisionId,
     managerAccountId,
     dateFrom,
     dateTo,

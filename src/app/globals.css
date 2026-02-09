@@ -121,6 +121,7 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }
@@ -129,7 +130,7 @@
 /* 🎨 Tech Background Pattern */
 .tech-bg {
   background-color: hsl(var(--background));
-  background-image: 
+  background-image:
     radial-gradient(circle at 1px 1px, var(--color-primary) 1px, transparent 0);
   background-size: 40px 40px;
   opacity: 0.03;
@@ -148,7 +149,7 @@
 
 /* Premium Title Styling */
 .title-glow {
-  text-shadow: 
+  text-shadow:
     0 0 10px oklch(from var(--primary) l c h / 0.5),
     0 0 20px oklch(from var(--primary) l c h / 0.3),
     0 0 30px oklch(from var(--primary) l c h / 0.2);
@@ -165,4 +166,28 @@
 .title-stroke {
   -webkit-text-stroke: 0.5px oklch(from var(--foreground) l c h / 0.3);
   paint-order: stroke fill;
+}
+
+/* 🗺️ Google Maps InfoWindow: Dark Mode Overrides */
+.dark .gm-style-iw-c {
+  background: oklch(0.16 0.02 280) !important;
+  border: 1px solid oklch(0.28 0.02 280) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+  padding: 0 !important;
+}
+
+/* Remove white background from content wrapper */
+.dark .gm-style-iw-d {
+  overflow: auto !important;
+  background: transparent !important;
+}
+
+/* Dark mode arrow (the tail pointing down) */
+.dark .gm-style-iw-tc::after {
+  background: oklch(0.16 0.02 280) !important;
+}
+
+/* Hide default Google Maps close button — we use our own custom X */
+.gm-style-iw button.gm-ui-hover-effect {
+  display: none !important;
 }

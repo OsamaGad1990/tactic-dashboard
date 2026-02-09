@@ -1,11 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import { useToast } from '@/components/providers/toast-provider';
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Loader2, Lock, CheckCircle, Circle, LogOut, Monitor } from 'lucide-react';
+import Link from 'next/link';
+import { Eye, EyeOff, Loader2, Lock, CheckCircle, Circle, LogOut, Monitor, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,8 +56,8 @@ function SessionOption({
             type="button"
             onClick={onClick}
             className={`flex items-start gap-3 w-full p-3 rounded-lg border transition-all text-start ${selected
-                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                    : 'border-border hover:bg-muted/50'
+                ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                : 'border-border hover:bg-muted/50'
                 }`}
         >
             <div className={`p-2 rounded-full ${selected ? 'bg-primary/10' : 'bg-muted'}`}>
@@ -88,6 +90,7 @@ export function ChangePasswordForm() {
     const [isLoading, setIsLoading] = useState(false);
     const [serverError, setServerError] = useState<string | null>(null);
     const [logoutAll, setLogoutAll] = useState(false);
+    const toast = useToast();
 
     const {
         register,
@@ -114,11 +117,13 @@ export function ChangePasswordForm() {
 
             if (result.error) {
                 setServerError(result.error);
+                toast.error(tErrors(result.error as ErrorKey));
                 setIsLoading(false);
                 return;
             }
 
             if (result.success) {
+                toast.success(locale === 'ar' ? 'تم تغيير كلمة المرور بنجاح' : 'Password changed successfully');
                 if (result.loggedOut) {
                     // Redirect to login if logged out from all sessions
                     router.push(`/${locale}/login`);
@@ -272,6 +277,13 @@ export function ChangePasswordForm() {
                         {t('change_password_button')}
                     </>
                 )}
+            </Button>
+
+            <Button asChild variant="ghost" className="w-full">
+                <Link href={`/${locale}/login`}>
+                    <ArrowLeft className="me-2 h-4 w-4" />
+                    {t('back_to_login')}
+                </Link>
             </Button>
         </form>
     );

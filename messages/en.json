@@ -183,7 +183,8 @@
         "keep_sessions": "Keep current sessions",
         "keep_sessions_desc": "Stay logged in on all your devices",
         "logout_all_sessions": "Logout from all devices",
-        "logout_all_sessions_desc": "Sign out from all other devices"
+        "logout_all_sessions_desc": "Sign out from all other devices",
+        "back_to_login": "Back to Login"
     },
     "ResetPassword": {
         "title": "Reset Password",
@@ -224,6 +225,8 @@
         "notifications": "Notifications",
         "visit_requests": "Visit Requests",
         "yesterday_visits": "Yesterday's Visits",
+        "complaints": "Complaints",
+        "attendance": "Attendance",
         "live_tracking": "Live Tracking"
     },
     "filters": {
@@ -246,5 +249,26 @@
         "reset": "Reset",
         "resetFilters": "Reset all filters",
         "loadError": "Failed to load filters"
+    },
+    "tracking": {
+        "total": "Total",
+        "online": "Online",
+        "offline": "Offline",
+        "fakeGps": "Fake GPS",
+        "lowBattery": "Low Battery",
+        "live": "Live",
+        "disconnected": "Disconnected",
+        "refresh": "Refresh",
+        "mode3D": "3D View",
+        "mode2D": "2D View",
+        "loadingLocations": "Loading locations...",
+        "mapUnavailable": "Map Unavailable",
+        "apiKeyMissing": "Google Maps API key is missing",
+        "noLocations": "No Locations Available",
+        "noActiveUsers": "No active users found at this time",
+        "traceLoading": "Loading trace...",
+        "fakeGpsSegment": "Fake GPS Detected",
+        "teleportDetected": "Teleportation Detected",
+        "offlineGhost": "Offline - Ghost Mode"
     }
 }

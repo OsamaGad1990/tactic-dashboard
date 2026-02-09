@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useToast } from '@/components/providers/toast-provider';
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations, useLocale } from 'next-intl';
@@ -26,6 +27,7 @@ export function ForgotPasswordForm() {
     const [isLoading, setIsLoading] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
     const [serverError, setServerError] = useState<string | null>(null);
+    const toast = useToast();
 
     const {
         register,
@@ -47,11 +49,13 @@ export function ForgotPasswordForm() {
 
             if (result.error) {
                 setServerError(result.error);
+                toast.error(tErrors(result.error as ErrorKey));
                 setIsLoading(false);
                 return;
             }
 
             if (result.success) {
+                toast.success(locale === 'ar' ? 'تم إرسال رابط إعادة التعيين' : 'Reset link sent to your email');
                 setIsSuccess(true);
             }
         } catch {

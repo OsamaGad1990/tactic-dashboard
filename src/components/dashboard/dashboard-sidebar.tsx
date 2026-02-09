@@ -23,6 +23,8 @@ import {
     CalendarClock,
     History,
     MapPin,
+    MessageSquareWarning,
+    UserCheck,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -32,8 +34,13 @@ interface NavItem {
     icon: React.ReactNode;
 }
 
+// Feature keys that gate specific nav items
+const FEATURE_GATED_ROUTES: Record<string, string> = {
+    'live-tracking': 'live_tracking',
+};
+
 // Role-based navigation items
-function getNavItems(role: PortalRole, locale: string, t: (key: string) => string): NavItem[] {
+function getNavItems(role: PortalRole, locale: string, t: (key: string) => string, enabledFeatures: string[]): NavItem[] {
     const baseItems: NavItem[] = [];
 
     // Super Admin - sees everything
@@ -67,6 +74,8 @@ function getNavItems(role: PortalRole, locale: string, t: (key: string) => strin
             { label: t('notifications'), href: `/${locale}/dashboard/company/notifications`, icon: <Bell className="h-5 w-5" /> },
             { label: t('visit_requests'), href: `/${locale}/dashboard/company/visit-requests`, icon: <CalendarClock className="h-5 w-5" /> },
             { label: t('yesterday_visits'), href: `/${locale}/dashboard/company/yesterday-visits`, icon: <History className="h-5 w-5" /> },
+            { label: t('complaints'), href: `/${locale}/dashboard/company/complaints`, icon: <MessageSquareWarning className="h-5 w-5" /> },
+            { label: t('attendance'), href: `/${locale}/dashboard/company/attendance`, icon: <UserCheck className="h-5 w-5" /> },
             { label: t('live_tracking'), href: `/${locale}/dashboard/company/live-tracking`, icon: <MapPin className="h-5 w-5" /> },
         );
     }
@@ -80,14 +89,23 @@ function getNavItems(role: PortalRole, locale: string, t: (key: string) => strin
         );
     }
 
-    return baseItems;
+    return baseItems.filter((item) => {
+        // Check if this route requires a feature flag
+        const routeSegment = item.href.split('/').pop() ?? '';
+        const requiredFeature = FEATURE_GATED_ROUTES[routeSegment];
+        if (requiredFeature && !enabledFeatures.includes(requiredFeature)) {
+            return false;
+        }
+        return true;
+    });
 }
 
 interface DashboardSidebarProps {
     portalRole: PortalRole;
+    enabledFeatures?: string[];
 }
 
-export function DashboardSidebar({ portalRole }: DashboardSidebarProps) {
+export function DashboardSidebar({ portalRole, enabledFeatures = [] }: DashboardSidebarProps) {
     const locale = useLocale();
     const pathname = usePathname();
     const t = useTranslations('Sidebar');
@@ -99,7 +117,7 @@ export function DashboardSidebar({ portalRole }: DashboardSidebarProps) {
         setMounted(true);
     }, []);
 
-    const navItems = getNavItems(portalRole, locale, t);
+    const navItems = getNavItems(portalRole, locale, t, enabledFeatures);
 
     return (
         <aside

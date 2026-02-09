@@ -13,9 +13,10 @@ interface DashboardLayoutProps {
     userRole: PortalRole;
     avatarUrl?: string | null;
     userId: string;
+    enabledFeatures?: string[];
 }
 
-export function DashboardLayout({ children, userName, userRole, avatarUrl, userId }: DashboardLayoutProps) {
+export function DashboardLayout({ children, userName, userRole, avatarUrl, userId, enabledFeatures = [] }: DashboardLayoutProps) {
     const locale = useLocale();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const isRTL = locale === 'ar';
@@ -33,7 +34,7 @@ export function DashboardLayout({ children, userName, userRole, avatarUrl, userI
 
             {/* Sidebar - Desktop */}
             <div className="hidden md:block">
-                <DashboardSidebar portalRole={userRole} />
+                <DashboardSidebar portalRole={userRole} enabledFeatures={enabledFeatures} />
             </div>
 
             {/* Sidebar - Mobile Overlay */}
@@ -49,7 +50,7 @@ export function DashboardLayout({ children, userName, userRole, avatarUrl, userI
                         'fixed top-16 bottom-0 z-40 w-64 md:hidden',
                         isRTL ? 'right-0' : 'left-0'
                     )}>
-                        <DashboardSidebar portalRole={userRole} />
+                        <DashboardSidebar portalRole={userRole} enabledFeatures={enabledFeatures} />
                     </div>
                 </>
             )}

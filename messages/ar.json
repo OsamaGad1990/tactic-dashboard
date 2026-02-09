@@ -183,7 +183,8 @@
         "keep_sessions": "الإبقاء على الجلسات الحالية",
         "keep_sessions_desc": "ستظل مسجل الدخول على جميع الأجهزة",
         "logout_all_sessions": "تسجيل الخروج من جميع الأجهزة",
-        "logout_all_sessions_desc": "سيتم تسجيل خروجك من جميع الأجهزة الأخرى"
+        "logout_all_sessions_desc": "سيتم تسجيل خروجك من جميع الأجهزة الأخرى",
+        "back_to_login": "العودة لتسجيل الدخول"
     },
     "ResetPassword": {
         "title": "إعادة تعيين كلمة المرور",
@@ -224,6 +225,8 @@
         "notifications": "الإشعارات",
         "visit_requests": "طلبات الزيارة",
         "yesterday_visits": "زيارات أمس",
+        "complaints": "الشكاوى",
+        "attendance": "الحضور",
         "live_tracking": "التحركات لحظياً"
     },
     "filters": {
@@ -246,5 +249,26 @@
         "reset": "إعادة تعيين",
         "resetFilters": "إعادة تعيين كل الفلاتر",
         "loadError": "فشل تحميل الفلاتر"
+    },
+    "tracking": {
+        "total": "إجمالي",
+        "online": "متصل",
+        "offline": "غير متصل",
+        "fakeGps": "GPS مزيف",
+        "lowBattery": "بطارية منخفضة",
+        "live": "مباشر",
+        "disconnected": "غير متصل",
+        "refresh": "تحديث",
+        "mode3D": "عرض ثلاثي الأبعاد",
+        "mode2D": "عرض ثنائي الأبعاد",
+        "loadingLocations": "جاري تحميل المواقع...",
+        "mapUnavailable": "تعذر تحميل الخريطة",
+        "apiKeyMissing": "مفتاح Google Maps غير موجود",
+        "noLocations": "لا توجد مواقع حالياً",
+        "noActiveUsers": "لم يتم العثور على مستخدمين نشطين في الوقت الحالي",
+        "traceLoading": "جاري تحميل المسار...",
+        "fakeGpsSegment": "تم اكتشاف GPS مزيف",
+        "teleportDetected": "تم اكتشاف انتقال مستحيل",
+        "offlineGhost": "غير متصل - وضع الشبح"
     }
 }
