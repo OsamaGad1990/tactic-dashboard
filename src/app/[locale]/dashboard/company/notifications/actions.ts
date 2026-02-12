@@ -2,7 +2,7 @@
 
 import { db } from '@/lib/db';
 import { notifications } from '@/lib/db/schema';
-import { getUserClientId } from '@/lib/services/client';
+import { getUserClientId, getUserDivisionId } from '@/lib/services/client';
 import { getPortalUser } from '@/lib/supabase/portal-user';
 import { revalidatePath } from 'next/cache';
 
@@ -28,6 +28,8 @@ export async function sendNotification(input: SendNotificationInput) {
             return { error: 'No client association' };
         }
 
+        const divisionId = await getUserDivisionId(user.id);
+
         // Validate
         if (!input.titleEn.trim()) {
             return { error: 'Title (English) is required' };
@@ -40,6 +42,8 @@ export async function sendNotification(input: SendNotificationInput) {
 
         await db.insert(notifications).values({
             clientId,
+            divisionId,
+            teamLeader: user.id,
             titleEn: input.titleEn.trim(),
             titleAr: input.titleAr?.trim() || null,
             messageEn: input.messageEn?.trim() || null,
@@ -70,7 +74,8 @@ export async function fetchNotificationDetails(notificationId: string) {
             return { data: null, error: 'Unauthorized' };
         }
 
-        const data = await getNotificationDetails(notificationId);
+        const clientId = await getUserClientId(user.id);
+        const data = await getNotificationDetails(notificationId, clientId ?? undefined);
         return { data, error: null };
     } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);

@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { DashboardLayout } from '@/components/dashboard/dashboard-layout';
 import { QueryProvider } from '@/lib/providers/QueryProvider';
 import { FilterProvider } from '@/lib/context/FilterContext';
-import { getUserClientId } from '@/lib/services/client';
+import { getUserClientId, getUserDivisionId } from '@/lib/services/client';
 import { getClientFeatures } from '@/lib/services/feature-service';
 
 export default async function DashboardRootLayout({
@@ -26,9 +26,14 @@ export default async function DashboardRootLayout({
         redirect(`/${locale}/login`);
     }
 
-    // Fetch enabled features for the user's client
-    const clientId = await getUserClientId(user.id);
-    const enabledFeatures = clientId ? await getClientFeatures(clientId) : [];
+    // Fetch client ID and division ID in parallel
+    const [clientId, divisionId] = await Promise.all([
+        getUserClientId(user.id),
+        getUserDivisionId(user.id),
+    ]);
+
+    // Fetch enabled features WITH division scoping (global + division-specific)
+    const enabledFeatures = clientId ? await getClientFeatures(clientId, divisionId) : [];
 
     return (
         <DashboardLayout

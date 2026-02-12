@@ -12,6 +12,7 @@ import { getClient } from '@/lib/db';
 // ============================================================================
 export interface ChartStatsParams {
     clientId: string;
+    divisionId?: string | null;
     chainId?: string | null;
     regionId?: string | null;
     branchId?: string | null;
@@ -49,6 +50,7 @@ export interface ChartStatsResult {
 // ============================================================================
 export async function getChartStats(params: ChartStatsParams): Promise<ChartStatsResult> {
     const clientId = params.clientId;
+    const divisionId = params.divisionId ?? null;
     const chainId = params.chainId ?? null;
     const regionId = params.regionId ?? null;
     const branchId = params.branchId ?? null;
@@ -61,7 +63,7 @@ export async function getChartStats(params: ChartStatsParams): Promise<ChartStat
         const sql = getClient();
 
         console.log('📊 Chart Stats - Params:', {
-            clientId, chainId, regionId, branchId,
+            clientId, divisionId, chainId, regionId, branchId,
             teamLeaderId, fieldStaffId, fromDate, toDate,
         });
 
@@ -84,6 +86,7 @@ export async function getChartStats(params: ChartStatsParams): Promise<ChartStat
                     vc.user_id
                 FROM visit_core vc
                 WHERE vc.client_id = ${clientId}::uuid
+                  AND (${divisionId}::uuid IS NULL OR vc.division_id = ${divisionId}::uuid)
                   AND vc.visit_date >= COALESCE(${fromDate}::date, CURRENT_DATE - INTERVAL '30 days')
                   AND vc.visit_date <= COALESCE(${toDate}::date, CURRENT_DATE)
                   AND (

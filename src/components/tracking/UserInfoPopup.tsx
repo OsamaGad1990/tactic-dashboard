@@ -1,6 +1,6 @@
 'use client';
 
-import { BATTERY_THRESHOLDS, MOCK_GPS_WARNING_ENABLED } from '@/lib/constants/tracking-constants';
+import { BATTERY_THRESHOLDS, LOCATION_DISABLED_WARNING_ENABLED, MOCK_GPS_WARNING_ENABLED } from '@/lib/constants/tracking-constants';
 import { formatRelativeTime } from '@/lib/hooks/useLiveMapData';
 import type { LiveMapPin } from '@/lib/types/tracking-types';
 import { getFullAvatarUrl } from '@/utils/supabase-images';
@@ -11,6 +11,7 @@ import {
     BatteryLow,
     BatteryMedium,
     Clock,
+    MapPinOff,
     Plug,
     User,
     X,
@@ -121,21 +122,27 @@ export const UserInfoPopup = memo(function UserInfoPopup({ pin, locale, onClose 
                             <img
                                 src={resolvedAvatarUrl}
                                 alt={pin.full_name}
-                                className={`h-12 w-12 rounded-full object-cover border-2 ${pin.status === 'online' ? 'border-green-500' : 'border-gray-400 grayscale'
+                                className={`h-12 w-12 rounded-full object-cover border-2 ${pin.status === 'online'
+                                    ? pin.is_checked_in ? 'border-green-500' : 'border-red-500'
+                                    : 'border-gray-400 grayscale'
                                     }`}
                                 loading="eager"
                                 referrerPolicy="no-referrer"
                                 onError={handleAvatarError}
                             />
                         ) : (
-                            <div className={`h-12 w-12 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 border-2 ${pin.status === 'online' ? 'border-green-500' : 'border-gray-400'
+                            <div className={`h-12 w-12 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 border-2 ${pin.status === 'online'
+                                ? pin.is_checked_in ? 'border-green-500' : 'border-red-500'
+                                : 'border-gray-400'
                                 }`}>
                                 <User className="h-6 w-6 text-gray-500 dark:text-gray-400" />
                             </div>
                         )}
 
                         {/* Status indicator */}
-                        <span className={`absolute -bottom-0.5 -${isArabic ? 'left' : 'right'}-0.5 block h-3.5 w-3.5 rounded-full border-2 border-card ${pin.status === 'online' ? 'bg-green-500' : 'bg-gray-400'
+                        <span className={`absolute -bottom-0.5 -${isArabic ? 'left' : 'right'}-0.5 block h-3.5 w-3.5 rounded-full border-2 border-card ${pin.status === 'online'
+                            ? pin.is_checked_in ? 'bg-green-500' : 'bg-red-500'
+                            : 'bg-gray-400'
                             }`} />
                     </div>
 
@@ -152,6 +159,16 @@ export const UserInfoPopup = memo(function UserInfoPopup({ pin, locale, onClose 
                         <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                         <span className="text-sm font-medium">
                             {isArabic ? 'موقع GPS مزيف!' : 'Fake GPS Detected!'}
+                        </span>
+                    </div>
+                )}
+
+                {/* Location Disabled Warning */}
+                {LOCATION_DISABLED_WARNING_ENABLED && pin.event_type === 'location_disabled' && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400">
+                        <MapPinOff className="h-4 w-4 flex-shrink-0" />
+                        <span className="text-sm font-medium">
+                            {isArabic ? 'خدمات الموقع معطلة!' : 'Location Services Disabled!'}
                         </span>
                     </div>
                 )}
@@ -175,12 +192,16 @@ export const UserInfoPopup = memo(function UserInfoPopup({ pin, locale, onClose 
 
                 {/* Status Badge */}
                 <div className={`text-center py-1.5 rounded-lg text-sm font-medium ${pin.status === 'online'
-                    ? 'bg-green-500/10 text-green-600 dark:text-green-400'
-                    : 'bg-gray-500/10 text-gray-600 dark:text-gray-400'
+                        ? pin.is_checked_in
+                            ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                            : 'bg-red-500/10 text-red-600 dark:text-red-400'
+                        : 'bg-gray-500/10 text-gray-600 dark:text-gray-400'
                     }`}>
                     {pin.status === 'online'
-                        ? (isArabic ? 'متصل الآن' : 'Online Now')
-                        : (isArabic ? `🔴 ${lastSeenText}` : `🔴 Offline - ${lastSeenText}`)
+                        ? pin.is_checked_in
+                            ? (isArabic ? '🟢 في زيارة' : '🟢 In Visit')
+                            : (isArabic ? '🔴 متوقف' : '🔴 Idle')
+                        : (isArabic ? `⚫ ${lastSeenText}` : `⚫ Offline - ${lastSeenText}`)
                     }
                 </div>
             </div>

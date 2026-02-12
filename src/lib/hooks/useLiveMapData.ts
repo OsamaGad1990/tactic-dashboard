@@ -1,6 +1,7 @@
 'use client';
 
 import {
+    AUTO_REFRESH_INTERVAL_MS,
     ONLINE_THRESHOLD_MINUTES,
     POLL_INTERVAL_MS,
     REALTIME_CHANNEL_NAME,
@@ -57,7 +58,8 @@ function hasPinChanged(oldPin: LiveMapPin, newData: Partial<LiveMapPin>): boolea
         oldPin.longitude !== newData.longitude ||
         oldPin.battery_level !== newData.battery_level ||
         oldPin.is_mock !== newData.is_mock ||
-        oldPin.last_seen !== newData.last_seen
+        oldPin.last_seen !== newData.last_seen ||
+        oldPin.event_type !== newData.event_type
     );
 }
 
@@ -65,7 +67,9 @@ function hasPinChanged(oldPin: LiveMapPin, newData: Partial<LiveMapPin>): boolea
 // HOOK: useLiveMapData (ZERO-FLICKER OPTIMIZED)
 // ============================================================================
 export function useLiveMapData(clientId: string | null) {
-    const supabase = createClient();
+    // Stable supabase reference (createBrowserClient returns singleton, but
+    // wrapping in useMemo guarantees stable reference for dependency chains)
+    const supabase = useMemo(() => createClient(), []);
     const { scope } = useScope();
 
     // Use Map for O(1) lookups and stable object identity
@@ -111,10 +115,24 @@ export function useLiveMapData(clientId: string | null) {
             // First: process fresh data from RPC
             pinsArray.forEach((rawPin: Record<string, unknown>) => {
                 // Coerce lat/lng to numbers (RPC may return strings)
-                const lat = Number(rawPin.latitude);
-                const lng = Number(rawPin.longitude);
+                let lat = Number(rawPin.latitude);
+                let lng = Number(rawPin.longitude);
+                const eventType = rawPin.event_type === 'location_disabled' ? 'location_disabled' as const : 'normal' as const;
 
-                // Skip pins with invalid coordinates
+                // For location_disabled events with 0,0 coords: use last known position
+                if (eventType === 'location_disabled' && (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0)) {
+                    const existingPin = pinsMapRef.current.get(String(rawPin.user_id));
+                    if (existingPin && existingPin.latitude !== 0 && existingPin.longitude !== 0) {
+                        lat = existingPin.latitude;
+                        lng = existingPin.longitude;
+                    } else {
+                        // No last known position available — skip
+                        console.warn('⚠️ Skipping location_disabled pin with no last known position:', rawPin.user_id);
+                        return;
+                    }
+                }
+
+                // Skip pins with invalid coordinates (normal events only)
                 if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
                     console.warn('⚠️ Skipping pin with invalid coords:', rawPin.user_id, rawPin.latitude, rawPin.longitude);
                     return;
@@ -133,6 +151,8 @@ export function useLiveMapData(clientId: string | null) {
                     is_mock: Boolean(rawPin.is_mock),
                     last_seen: String(rawPin.last_seen ?? new Date().toISOString()),
                     status: calculateStatus(String(rawPin.last_seen ?? new Date().toISOString())),
+                    event_type: eventType,
+                    is_checked_in: Boolean(rawPin.is_checked_in),
                 };
 
                 // Store raw avatar path for signed URL generation
@@ -219,14 +239,44 @@ export function useLiveMapData(clientId: string | null) {
         }
     }, [clientId, supabase]);
 
+    // Ref to always access the latest fetchPins without adding it to effect deps
+    const fetchPinsRef = useRef(fetchPins);
+    fetchPinsRef.current = fetchPins;
+
     // ========================================================================
-    // REALTIME SUBSCRIPTION: user_live_status (OPTIMIZED)
+    // REALTIME SUBSCRIPTION + AUTH-AWARE INITIAL FETCH
     // ========================================================================
     useEffect(() => {
         if (!clientId) return;
 
-        // Initial fetch
-        fetchPins();
+        let isMounted = true;
+        let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+
+        // Wait for auth session to be ready, THEN fetch
+        async function initWithAuth() {
+            try {
+                // Ensure the browser client has parsed session cookies
+                const { data: { session } } = await supabase.auth.getSession();
+                console.log('🔐 [AUTH] Session ready:', !!session);
+
+                if (!isMounted) return;
+
+                // Initial fetch
+                await fetchPinsRef.current();
+
+                // Auto-retry if first fetch returned 0 pins (session may have been stale)
+                if (isMounted && pinsMapRef.current.size === 0 && session) {
+                    console.log('🔄 [RETRY] First fetch returned 0 pins, retrying in 2s...');
+                    retryTimeout = setTimeout(() => {
+                        if (isMounted) fetchPinsRef.current();
+                    }, 2000);
+                }
+            } catch (err) {
+                console.error('❌ [INIT] Auth/fetch failed:', err);
+            }
+        }
+
+        initWithAuth();
 
         // Set up Realtime channel
         const channel = supabase
@@ -265,7 +315,7 @@ export function useLiveMapData(clientId: string | null) {
 
                     if (!existingPin) {
                         // New user - fetch full data (rare case)
-                        fetchPins();
+                        fetchPinsRef.current();
                         return;
                     }
 
@@ -276,10 +326,10 @@ export function useLiveMapData(clientId: string | null) {
                         battery_level: newData.battery_level != null ? Number(newData.battery_level) : null,
                         is_mock: Boolean(newData.is_mock),
                         last_seen: String(newData.last_seen),
+                        event_type: newData.event_type === 'location_disabled' ? 'location_disabled' as const : 'normal' as const,
                     };
 
                     if (!hasPinChanged(existingPin, coercedData)) {
-                        console.log('📡 No actual change for user:', userId);
                         return; // Skip update - no re-render needed
                     }
 
@@ -298,6 +348,7 @@ export function useLiveMapData(clientId: string | null) {
                         is_mock: coercedData.is_mock,
                         last_seen: coercedData.last_seen,
                         status: calculateStatus(coercedData.last_seen),
+                        event_type: coercedData.event_type,
                     };
 
                     pinsMapRef.current.set(userId, updatedPin);
@@ -314,22 +365,35 @@ export function useLiveMapData(clientId: string | null) {
 
         channelRef.current = channel;
 
-        // Fallback polling (in case realtime fails)
+        // ================================================================
+        // AUTO-REFRESH: Mandatory 60s interval (live dashboard feed)
+        // Fires regardless of Realtime status so the map always updates.
+        // ================================================================
+        const autoRefreshInterval = setInterval(() => {
+            console.log('🔄 [AUTO-REFRESH] Refreshing live pins...');
+            fetchPinsRef.current();
+        }, AUTO_REFRESH_INTERVAL_MS);
+
+        // Fallback polling every 30s (faster safety net when Realtime drops)
         const pollInterval = setInterval(() => {
             if (!isConnectedRef.current) {
-                console.log('⏰ Fallback polling...');
-                fetchPins();
+                console.log('⏰ Fallback polling (Realtime disconnected)...');
+                fetchPinsRef.current();
             }
         }, POLL_INTERVAL_MS);
 
         // Cleanup
         return () => {
+            isMounted = false;
+            if (retryTimeout) clearTimeout(retryTimeout);
+            clearInterval(autoRefreshInterval);
             clearInterval(pollInterval);
             if (channelRef.current) {
                 supabase.removeChannel(channelRef.current);
             }
         };
-    }, [clientId, supabase, fetchPins]);
+        // Only re-subscribe when clientId or supabase changes (stable deps)
+    }, [clientId, supabase]);
 
     // ========================================================================
     // MEMOIZED PINS ARRAY (Stable references)
@@ -346,6 +410,9 @@ export function useLiveMapData(clientId: string | null) {
         const online = pins.filter((p) => p.status === 'online').length;
         const offline = pins.filter((p) => p.status === 'offline').length;
         const mockGps = pins.filter((p) => p.is_mock).length;
+        const locationDisabled = pins.filter((p) => p.event_type === 'location_disabled').length;
+        const checkedIn = pins.filter((p) => p.status === 'online' && p.is_checked_in).length;
+        const idle = pins.filter((p) => p.status === 'online' && !p.is_checked_in).length;
         // Smart battery: only count as low if strictly 1-19% (not null or 0 = emulator)
         const lowBattery = pins.filter((p) => {
             const level = p.battery_level;
@@ -357,7 +424,10 @@ export function useLiveMapData(clientId: string | null) {
             online,
             offline,
             mockGps,
+            locationDisabled,
             lowBattery,
+            checkedIn,
+            idle,
         };
     }, [pins]);
 

@@ -8,6 +8,13 @@
 export type UserStatus = 'online' | 'offline';
 
 /**
+ * Event type for tracking status.
+ * - normal: GPS working correctly
+ * - location_disabled: user turned off location services
+ */
+export type TrackingEventType = 'normal' | 'location_disabled';
+
+/**
  * Live map pin data from get_live_map_pins RPC.
  */
 export interface LiveMapPin {
@@ -23,6 +30,8 @@ export interface LiveMapPin {
     is_mock: boolean;
     last_seen: string; // ISO timestamp
     status: UserStatus;
+    event_type: TrackingEventType;
+    is_checked_in: boolean;
 }
 
 /**
@@ -46,6 +55,7 @@ export interface RealtimeStatusPayload {
         battery_level: number | null;
         is_mock: boolean;
         last_seen: string;
+        event_type?: TrackingEventType;
     };
     old: {
         user_id: string;
@@ -112,6 +122,7 @@ export interface TrackingLogEntry {
     speed: number | null;
     battery_level: number | null;
     is_mock: boolean;
+    event_type?: TrackingEventType;
     created_at: string; // ISO timestamp
 }
 

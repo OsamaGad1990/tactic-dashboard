@@ -18,6 +18,7 @@ import {
     Box,
     Loader2,
     MapPin,
+    MapPinOff,
     RefreshCw,
     Users,
     Wifi,
@@ -42,7 +43,7 @@ const StatsBar = memo(function StatsBar({
     isLoading,
     locale,
 }: {
-    stats: { total: number; online: number; offline: number; mockGps: number; lowBattery: number };
+    stats: { total: number; online: number; offline: number; mockGps: number; locationDisabled: number; lowBattery: number; checkedIn: number; idle: number };
     isConnected: boolean;
     onRefresh: () => void;
     isLoading: boolean;
@@ -72,6 +73,24 @@ const StatsBar = memo(function StatsBar({
                     <span className="text-xs text-muted-foreground">{t('online')}</span>
                 </div>
 
+                {/* Checked In (active visit) */}
+                {stats.checkedIn > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10">
+                        <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                        <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{stats.checkedIn}</span>
+                        <span className="text-xs text-muted-foreground">{t('checkedIn')}</span>
+                    </div>
+                )}
+
+                {/* Idle (online but no active visit) */}
+                {stats.idle > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10">
+                        <div className="h-2 w-2 rounded-full bg-red-500" />
+                        <span className="text-sm font-medium text-red-600 dark:text-red-400">{stats.idle}</span>
+                        <span className="text-xs text-muted-foreground">{t('idle')}</span>
+                    </div>
+                )}
+
                 {/* Offline */}
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-500/10">
                     <div className="h-2 w-2 rounded-full bg-gray-400" />
@@ -94,6 +113,15 @@ const StatsBar = memo(function StatsBar({
                         <Battery className="h-4 w-4 text-yellow-500" />
                         <span className="text-sm font-medium text-yellow-600 dark:text-yellow-400">{stats.lowBattery}</span>
                         <span className="text-xs text-muted-foreground">{t('lowBattery')}</span>
+                    </div>
+                )}
+
+                {/* Location Disabled Warning */}
+                {stats.locationDisabled > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10">
+                        <MapPinOff className="h-4 w-4 text-red-500" />
+                        <span className="text-sm font-medium text-red-600 dark:text-red-400">{stats.locationDisabled}</span>
+                        <span className="text-xs text-muted-foreground">{t('locationOff')}</span>
                     </div>
                 )}
             </div>
@@ -316,6 +344,27 @@ export function LiveMapContainer({ clientId }: LiveMapContainerProps) {
     const t = useTranslations('tracking');
 
     const { pins, isLoading, error, isConnected, stats, refetch } = useLiveMapData(clientId);
+
+    // 🔍 DIAGNOSTIC: Log pin data for debugging
+    useEffect(() => {
+        if (pins.length > 0) {
+            console.log('🗺️ [DIAGNOSTIC] LiveMap Pins:', pins.map(p => {
+                const lastSeenDate = new Date(p.last_seen);
+                const now = new Date();
+                const diffMin = (now.getTime() - lastSeenDate.getTime()) / (1000 * 60);
+                return {
+                    user: p.full_name,
+                    lat: p.latitude,
+                    lng: p.longitude,
+                    status: p.status,
+                    last_seen: p.last_seen,
+                    last_seen_parsed: lastSeenDate.toISOString(),
+                    now: now.toISOString(),
+                    diff_minutes: Math.round(diffMin * 10) / 10,
+                };
+            }));
+        }
+    }, [pins]);
 
     // Track selected pin by ID (not object) for stable reference
     const [selectedPinId, setSelectedPinId] = useState<string | null>(null);

@@ -6,7 +6,7 @@
  * Time threshold (in minutes) to consider a user as "online".
  * If last_seen is within this threshold, user is online.
  */
-export const ONLINE_THRESHOLD_MINUTES = 5;
+export const ONLINE_THRESHOLD_MINUTES = 20;
 
 /**
  * Cluster radius in pixels for marker clustering.
@@ -26,6 +26,13 @@ export const CLUSTER_MAX_ZOOM = 15;
 export const POLL_INTERVAL_MS = 30000;
 
 /**
+ * Mandatory auto-refresh interval in milliseconds.
+ * Fires regardless of Realtime connection status.
+ * Ensures the map stays alive like a live dashboard feed.
+ */
+export const AUTO_REFRESH_INTERVAL_MS = 60000;
+
+/**
  * Realtime subscription channel name.
  */
 export const REALTIME_CHANNEL_NAME = 'live-tracking';
@@ -34,6 +41,7 @@ export const REALTIME_CHANNEL_NAME = 'live-tracking';
  * Enable/disable mock GPS warning indicator.
  */
 export const MOCK_GPS_WARNING_ENABLED = true;
+export const LOCATION_DISABLED_WARNING_ENABLED = true;
 
 /**
  * Default map center (Saudi Arabia - Riyadh).
@@ -87,9 +95,9 @@ export const TRACE_STROKE_WIDTH = 4;
  * Trace segment colors.
  */
 export const TRACE_COLORS = {
-    VALID: '#2563EB',       // Blue - valid GPS
+    VALID: '#22c55e',       // Green - valid GPS (matches Situation Room)
     FRAUD: '#EF4444',       // Red - mock GPS
-    TELEPORT: '#DC2626',    // Red (darker) - impossible jump
+    TELEPORT: '#F59E0B',    // Amber/Yellow - impossible jump (distinct from fraud red)
 };
 
 /**

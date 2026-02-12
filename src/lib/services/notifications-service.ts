@@ -115,8 +115,9 @@ export interface FieldUser {
 
 /**
  * Fetch all field users under this client (for audience dropdowns)
+ * Scoped by client_id + optional division_id
  */
-export const getFieldUsers = cache(async (clientId: string, _divisionId?: string | null): Promise<FieldUser[]> => {
+export const getFieldUsers = cache(async (clientId: string, divisionId?: string | null): Promise<FieldUser[]> => {
     try {
         // client_users only has: id, client_id, user_id
         // First get all user IDs for this client, then fetch account details
@@ -136,6 +137,7 @@ export const getFieldUsers = cache(async (clientId: string, _divisionId?: string
               AND account_status = 'active'
               AND field_role IS NOT NULL
               AND field_role != 'none'
+              ${divisionId ? sql`AND division_id = ${divisionId}::uuid` : sql``}
             ORDER BY field_role, full_name
         `) as unknown as { id: string; full_name: string | null; arabic_name: string | null; field_role: string | null }[];
 
@@ -183,15 +185,17 @@ export interface NotificationDetail {
 /**
  * Fetch full analytics for a specific notification
  * Uses raw SQL exclusively to avoid Drizzle UUID comparison issues
+ * Requires clientId for ownership verification
  */
-export async function getNotificationDetails(notificationId: string): Promise<NotificationDetail | null> {
+export async function getNotificationDetails(notificationId: string, clientId?: string): Promise<NotificationDetail | null> {
     try {
-        // 1. Fetch notification
+        // 1. Fetch notification (with optional client_id ownership check)
         const notifRows = await db.execute(
             sql`SELECT id, title_en, title_ar, message_en, message_ar,
                        audience_type, created_at, unified_status
                 FROM notifications
                 WHERE id = ${notificationId}::uuid
+                  ${clientId ? sql`AND client_id = ${clientId}::uuid` : sql``}
                 LIMIT 1`
         );
 

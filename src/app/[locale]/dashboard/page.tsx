@@ -1,7 +1,13 @@
+// ============================================================================
+// DASHBOARD PAGE — Mounts DynamicDashboard with server-side context
+// Server component: fetches user/client/division IDs, passes to client
+// ============================================================================
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { getUserWithProfile } from '@/lib/actions/auth';
-import { DashboardContent } from '@/components/dashboard/dashboard-content';
+import { getPortalUser } from '@/lib/supabase/portal-user';
+import { getUserClientId, getUserDivisionId } from '@/lib/services/client';
+import { getClientFeatures } from '@/lib/services/feature-service';
+import { DynamicDashboard } from '@/components/dashboard/DynamicDashboard';
 
 export async function generateMetadata({
     params,
@@ -23,12 +29,30 @@ export default async function DashboardPage({
     params: Promise<{ locale: string }>;
 }) {
     const { locale } = await params;
-    const { user, profile } = await getUserWithProfile();
+    const user = await getPortalUser();
 
-    // Double-check authentication (middleware should handle this)
+    // Authentication guard (middleware handles this, but double-check)
     if (!user) {
         redirect(`/${locale}/login`);
     }
 
-    return <DashboardContent user={user} profile={profile} />;
+    // Fetch client context in parallel
+    const [clientId, divisionId] = await Promise.all([
+        getUserClientId(user.id),
+        getUserDivisionId(user.id),
+    ]);
+
+    // Fetch enabled features for widget registry
+    const enabledFeatures = clientId
+        ? await getClientFeatures(clientId, divisionId)
+        : [];
+
+    return (
+        <DynamicDashboard
+            userAccountId={user.id}
+            clientId={clientId ?? ''}
+            divisionId={divisionId}
+            enabledFeatures={enabledFeatures}
+        />
+    );
 }

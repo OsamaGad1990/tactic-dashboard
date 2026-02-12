@@ -1,128 +1,63 @@
 // ============================================================================
 // HOOK: useChartStats
-// Purpose: Fetch chart analytics data with filter reactivity + 600ms debounce
-// Performance: Debounced to prevent database thrashing during rapid filter changes
+// Purpose: Bridge AnalyticsDashboard circle charts → get_dashboard_ops_metrics RPC
+//
+// Architecture (v2 — RPC-backed):
+//   Previously called getChartStats() server action (separate SQL queries).
+//   Now bridges to useDashboardData() so a SINGLE RPC call powers BOTH
+//   the circle charts AND the stat cards. This eliminates double-fetching
+//   and ensures data consistency between the two views.
 // ============================================================================
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { useState, useEffect, useRef } from 'react';
-import { useFilters } from '@/lib/context/FilterContext';
-import { getChartStats, ChartStatsResult } from '@/lib/actions/chart-stats';
-
-// ============================================================================
-// DEBOUNCE HOOK (600ms)
-// ============================================================================
-function useDebouncedValue<T>(value: T, delay: number = 600): T {
-    const [debouncedValue, setDebouncedValue] = useState<T>(value);
-    const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-    useEffect(() => {
-        // Clear existing timer
-        if (timerRef.current) {
-            clearTimeout(timerRef.current);
-        }
-
-        // Set new timer
-        timerRef.current = setTimeout(() => {
-            setDebouncedValue(value);
-        }, delay);
-
-        // Cleanup on unmount
-        return () => {
-            if (timerRef.current) {
-                clearTimeout(timerRef.current);
-            }
-        };
-    }, [value, delay]);
-
-    return debouncedValue;
-}
-
-// ============================================================================
-// QUERY KEYS
-// ============================================================================
-const chartKeys = {
-    all: ['chart-stats'] as const,
-    stats: (params: Record<string, string | null>) => ['chart-stats', params] as const,
-};
-
-// ============================================================================
-// FILTER PARAMS TYPE
-// ============================================================================
-interface FilterParams {
-    clientId: string | null;
-    chainId: string | null;
-    regionId: string | null;
-    branchId: string | null;
-    teamLeaderId: string | null;
-    fieldStaffId: string | null;
-    fromDate: string | null;
-    toDate: string | null;
-}
+import { useMemo } from 'react';
+import { useDashboardData } from './useDashboardData';
+import type { ChartStatsResult } from '@/lib/actions/chart-stats';
 
 // ============================================================================
 // HOOK
 // ============================================================================
-export function useChartStats(clientId: string | null) {
-    const { filters } = useFilters();
+export function useChartStats(clientId: string | null, divisionId?: string | null) {
+    // Reuse the single RPC call from useDashboardData
+    const query = useDashboardData();
 
-    // Build filter params object
-    const filterParams: FilterParams = {
-        clientId,
-        chainId: filters.chainId || null,
-        regionId: filters.regionId || null,
-        branchId: filters.branchId || null,
-        teamLeaderId: filters.teamLeaderId || null,
-        fieldStaffId: filters.fieldStaffId || null,
-        fromDate: filters.dateRange.from || null,
-        toDate: filters.dateRange.to || null,
+    // Map DashboardMetrics → ChartStatsResult
+    const data = useMemo((): ChartStatsResult | undefined => {
+        if (!query.data) return undefined;
+
+        const { visits, workforce, notifications } = query.data;
+
+        return {
+            // Row 1: Visit Metrics
+            total_visits: visits.total_visits,
+            completed_visits: visits.completed_visits,
+            incomplete_visits: visits.incomplete_visits,
+            completed_percentage: visits.completion_rate,
+            incomplete_percentage: visits.total_visits > 0
+                ? Math.round((visits.incomplete_visits / visits.total_visits) * 1000) / 10
+                : 0,
+
+            // Row 2: Product & Time Metrics
+            total_products: workforce.total_products,
+            available_percentage: workforce.availability_rate,
+            unavailable_percentage: workforce.total_products > 0
+                ? Math.round((1 - workforce.availability_rate / 100) * 1000) / 10
+                : 0,
+            work_time_minutes: workforce.total_work_minutes,
+            transit_time_minutes: workforce.total_travel_minutes,
+
+            // Row 3: Notification Metrics
+            total_notifications: notifications.total,
+            read_percentage: notifications.read_rate,
+            action_percentage: notifications.execution_rate,
+            avg_action_time_seconds: notifications.avg_wait_hours * 3600,
+            avg_pending_time_seconds: notifications.avg_wait_hours * 3600,
+        };
+    }, [query.data]);
+
+    // Return a compatible shape (data, isLoading, isFetching)
+    return {
+        ...query,
+        data,
     };
-
-    // Debounce filter params by 600ms to prevent database thrashing
-    const debouncedParams = useDebouncedValue(filterParams, 600);
-
-    // Check if we're waiting for debounce
-    const isDebouncing = JSON.stringify(filterParams) !== JSON.stringify(debouncedParams);
-
-    return useQuery<ChartStatsResult>({
-        queryKey: chartKeys.stats({
-            clientId: debouncedParams.clientId,
-            chainId: debouncedParams.chainId,
-            regionId: debouncedParams.regionId,
-            branchId: debouncedParams.branchId,
-            teamLeaderId: debouncedParams.teamLeaderId,
-            fieldStaffId: debouncedParams.fieldStaffId,
-            fromDate: debouncedParams.fromDate,
-            toDate: debouncedParams.toDate,
-        }),
-        queryFn: async () => {
-            if (!debouncedParams.clientId) {
-                throw new Error('Client ID is required');
-            }
-
-            console.log('📈 Fetching chart stats (debounced)...');
-
-            const result = await getChartStats({
-                clientId: debouncedParams.clientId,
-                chainId: debouncedParams.chainId,
-                regionId: debouncedParams.regionId,
-                branchId: debouncedParams.branchId,
-                teamLeaderId: debouncedParams.teamLeaderId,
-                fieldStaffId: debouncedParams.fieldStaffId,
-                fromDate: debouncedParams.fromDate,
-                toDate: debouncedParams.toDate,
-            });
-
-            console.log('📈 Chart stats received:', result);
-
-            return result;
-        },
-        enabled: Boolean(debouncedParams.clientId) && !isDebouncing,
-        staleTime: 60 * 1000, // 1 minute
-        gcTime: 10 * 60 * 1000, // 10 minutes
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
-    });
 }
-

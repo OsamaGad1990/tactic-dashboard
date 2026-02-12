@@ -99,7 +99,7 @@ export function RadialChart({
         if (unit === 'time') {
             // Display as H:MM or MM (value is in minutes)
             const hours = Math.floor(Math.abs(value) / 60);
-            const mins = Math.abs(value) % 60;
+            const mins = Math.floor(Math.abs(value) % 60);
             const sign = value < 0 ? '-' : '';
             return hours > 0 ? `${sign}${hours}:${mins.toString().padStart(2, '0')}` : `${sign}${mins}`;
         }
@@ -108,6 +108,16 @@ export function RadialChart({
         }
         return value.toLocaleString();
     }, [value, unit]);
+
+    // Sleek unit hint for time-based charts
+    const unitHint = useMemo(() => {
+        if (unit === 'time') {
+            const hours = Math.floor(Math.abs(value) / 60);
+            return hours > 0 ? 'hrs:min' : 'min';
+        }
+        if (unit === 'timeSeconds') return 'min:sec';
+        return null;
+    }, [unit, value]);
 
     return (
         <div className="
@@ -171,10 +181,10 @@ export function RadialChart({
                     />
                 </svg>
 
-                {/* Center Value */}
-                <div className="absolute inset-0 flex items-center justify-center">
+                {/* Center Value + Unit Hint */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
                     <motion.span
-                        className={`${config.fontSize} font-bold`}
+                        className={`${config.fontSize} font-bold leading-none`}
                         style={{ color: colors.stroke }}
                         initial={{ opacity: 0, scale: 0.5 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -182,6 +192,17 @@ export function RadialChart({
                     >
                         {displayValue}
                     </motion.span>
+                    {unitHint && (
+                        <motion.span
+                            className="text-[9px] font-medium tracking-wider uppercase opacity-50 mt-0.5"
+                            style={{ color: colors.stroke }}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.5 }}
+                            transition={{ delay: 1, duration: 0.5 }}
+                        >
+                            {unitHint}
+                        </motion.span>
+                    )}
                 </div>
             </div>
 

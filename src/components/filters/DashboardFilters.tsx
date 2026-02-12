@@ -11,9 +11,10 @@ import { useFilters } from '@/lib/context/FilterContext';
 interface DashboardFiltersProps {
     userAccountId: string;
     clientId: string | null;
+    divisionId?: string | null;
 }
 
-export function DashboardFilters({ userAccountId, clientId }: DashboardFiltersProps) {
+export function DashboardFilters({ userAccountId, clientId, divisionId }: DashboardFiltersProps) {
     const { filters } = useFilters();
 
     // Don't render if no clientId
@@ -24,6 +25,7 @@ export function DashboardFilters({ userAccountId, clientId }: DashboardFiltersPr
     return (
         <ScopeProvider
             clientId={clientId}
+            divisionId={divisionId}
             managerAccountId={userAccountId}
             dateFrom={filters.dateRange.from}
             dateTo={filters.dateRange.to}
