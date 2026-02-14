@@ -1,7 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { getPortalUser } from '@/lib/supabase/portal-user';
 import { getUserClientId, getUserDivisionId } from '@/lib/services/client';
-import { getClientProducts } from '@/lib/services/products-service';
+import { getClientProducts, getClientAvailabilityPlaces } from '@/lib/services/products-service';
 import { redirect } from 'next/navigation';
 import { Package, MapPin } from 'lucide-react';
 import { ProductsPanel } from '@/components/products/ProductsPanel';
@@ -66,7 +66,13 @@ export default async function ProductsPage({
         );
     }
 
-    const { categoryGroups, totalCount, activeCount } = await getClientProducts(clientId);
+    const [productsData, placesData] = await Promise.all([
+        getClientProducts(clientId),
+        getClientAvailabilityPlaces(clientId),
+    ]);
+
+    const { categoryGroups, totalCount, activeCount } = productsData;
+    const { places, placeProductMap, chains, chainProductMap } = placesData;
 
     return (
         <div className="space-y-6">
@@ -86,6 +92,10 @@ export default async function ProductsPage({
                 categoryGroups={categoryGroups}
                 totalCount={totalCount}
                 activeCount={activeCount}
+                availabilityPlaces={places}
+                placeProductMap={placeProductMap}
+                chains={chains}
+                chainProductMap={chainProductMap}
             />
         </div>
     );

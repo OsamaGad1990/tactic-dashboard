@@ -12,9 +12,15 @@ interface DashboardFiltersProps {
     userAccountId: string;
     clientId: string | null;
     divisionId?: string | null;
+    showLocationFilters?: boolean;
+    showRequestFilters?: boolean;
+    showVisitStatusFilters?: boolean;
+    showDateFilters?: boolean;
+    /** Only show these user IDs in the field staff dropdown */
+    allowedFieldStaffIds?: string[];
 }
 
-export function DashboardFilters({ userAccountId, clientId, divisionId }: DashboardFiltersProps) {
+export function DashboardFilters({ userAccountId, clientId, divisionId, showLocationFilters, showRequestFilters, showVisitStatusFilters, showDateFilters, allowedFieldStaffIds }: DashboardFiltersProps) {
     const { filters } = useFilters();
 
     // Don't render if no clientId
@@ -34,6 +40,11 @@ export function DashboardFilters({ userAccountId, clientId, divisionId }: Dashbo
                 <GlobalFilterBar
                     userAccountId={userAccountId}
                     clientId={clientId}
+                    showLocationFilters={showLocationFilters}
+                    showRequestFilters={showRequestFilters}
+                    showVisitStatusFilters={showVisitStatusFilters}
+                    showDateFilters={showDateFilters}
+                    allowedFieldStaffIds={allowedFieldStaffIds}
                 />
             </div>
         </ScopeProvider>

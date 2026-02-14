@@ -217,21 +217,6 @@ export function NotificationsPanel({ sentNotifications, fieldUsers }: Notificati
         }));
     }, [fieldUsers, isArabic]);
 
-    // ── DEBUG: log first 3 notifications to browser console ──
-    useMemo(() => {
-        if (sentNotifications.length > 0) {
-            console.log('[DEBUG] First 3 notifications:', sentNotifications.slice(0, 3).map(n => ({
-                audienceType: n.audienceType,
-                forAll: n.forAll,
-                forAllType: typeof n.forAll,
-                forRoles: n.forRoles,
-                forRolesType: typeof n.forRoles,
-                forRolesIsArray: Array.isArray(n.forRoles),
-                forUser: n.forUser,
-                teamLeader: n.teamLeader,
-            })));
-        }
-    }, [sentNotifications]);
 
     // ── Apply all 7 filters ──
     const filteredNotifications = useMemo(() => {
@@ -259,11 +244,14 @@ export function NotificationsPanel({ sentNotifications, fieldUsers }: Notificati
             if (senderTypeFilter === 'team_leader' && n.teamLeader === null) return false;
             // Sender name: specific TL UUID
             if (senderNameFilter !== 'all' && n.teamLeader !== senderNameFilter) return false;
-            // Recipient role: check forRoles array + audienceType + forAll (defensive)
+            // Recipient role: check forRoles array + audienceType + forAll + single_user target role
             if (recipientRoleFilter !== 'all') {
                 const sentToAll = n.audienceType === 'all' || n.forAll === true || n.forAll as unknown === 't';
                 const roleMatches = Array.isArray(n.forRoles) && n.forRoles.includes(recipientRoleFilter);
-                if (!sentToAll && !roleMatches) return false;
+                // Also match single_user notifications where the target user has this role
+                const singleUserRoleMatch = n.audienceType === 'single_user' && n.forUser
+                    && fieldUsers.some(u => u.id === n.forUser && u.fieldRole === recipientRoleFilter);
+                if (!sentToAll && !roleMatches && !singleUserRoleMatch) return false;
             }
             // Recipient name: check if this user would have received the notification
             if (recipientNameFilter !== 'all') {

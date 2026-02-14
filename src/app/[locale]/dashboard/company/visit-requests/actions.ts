@@ -66,3 +66,67 @@ export async function rejectRequest(requestId: string) {
     revalidatePath('/dashboard/company/visit-requests');
     return { success: true };
 }
+
+export async function approveBreakRequest(requestId: string) {
+    const user = await getPortalUser();
+    if (!user) {
+        return { error: 'Unauthorized' };
+    }
+
+    const clientId = await getUserClientId(user.id);
+    if (!clientId) {
+        return { error: 'No client association' };
+    }
+
+    const supabase = await createClient();
+
+    const { error } = await supabase
+        .from('visit_break_requests')
+        .update({
+            status: 'approved',
+            approver_id: user.id,
+        })
+        .eq('id', requestId)
+        .eq('client_id', clientId)
+        .eq('status', 'pending');
+
+    if (error) {
+        console.error('Failed to approve break request:', error.message);
+        return { error: error.message };
+    }
+
+    revalidatePath('/dashboard/company/visit-requests');
+    return { success: true };
+}
+
+export async function rejectBreakRequest(requestId: string) {
+    const user = await getPortalUser();
+    if (!user) {
+        return { error: 'Unauthorized' };
+    }
+
+    const clientId = await getUserClientId(user.id);
+    if (!clientId) {
+        return { error: 'No client association' };
+    }
+
+    const supabase = await createClient();
+
+    const { error } = await supabase
+        .from('visit_break_requests')
+        .update({
+            status: 'rejected',
+            approver_id: user.id,
+        })
+        .eq('id', requestId)
+        .eq('client_id', clientId)
+        .eq('status', 'pending');
+
+    if (error) {
+        console.error('Failed to reject break request:', error.message);
+        return { error: error.message };
+    }
+
+    revalidatePath('/dashboard/company/visit-requests');
+    return { success: true };
+}

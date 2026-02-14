@@ -163,12 +163,22 @@ export function useDashboardData(): UseQueryResult<DashboardMetrics, Error> {
                 filtersActive: geoFiltersActive,
             });
 
-            const { data, error } = await supabase.rpc('get_dashboard_ops_metrics', {
-                p_date_from: dateFrom,
-                p_date_to: dateTo,
-                p_market_ids: effectiveMarketIds,
-                p_staff_ids: staffIds,
-            });
+            // Parallel: Get correct product count (distinct active client_products)
+            // The RPC may return a visit-based product sum, so we override with catalog count
+            const [rpcResult, productCountResult] = await Promise.all([
+                supabase.rpc('get_dashboard_ops_metrics', {
+                    p_date_from: dateFrom,
+                    p_date_to: dateTo,
+                    p_market_ids: effectiveMarketIds,
+                    p_staff_ids: staffIds,
+                }),
+                supabase
+                    .from('client_products')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('is_active', true),
+            ]);
+
+            const { data, error } = rpcResult;
 
             if (error) {
                 console.error('❌ Dashboard metrics fetch failed:', {
@@ -183,7 +193,12 @@ export function useDashboardData(): UseQueryResult<DashboardMetrics, Error> {
                 throw new Error('Dashboard metrics returned null');
             }
 
-            return data as DashboardMetrics;
+            // Override total_products with the correct catalog count
+            const metrics = data as DashboardMetrics;
+            const correctProductCount = productCountResult.count ?? metrics.workforce.total_products;
+            metrics.workforce.total_products = correctProductCount;
+
+            return metrics;
         },
         enabled: !isScopeLoading && Boolean(dateFrom) && Boolean(dateTo),
         staleTime: STALE_TIME,

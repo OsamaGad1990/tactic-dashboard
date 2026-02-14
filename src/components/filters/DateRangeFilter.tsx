@@ -57,6 +57,7 @@ export function DateRangeFilter({
                     </label>
                     <input
                         type="date"
+                        lang="en-GB"
                         value={value.from || ''}
                         onChange={handleFromChange}
                         className="date-range-filter__input"
@@ -68,6 +69,7 @@ export function DateRangeFilter({
                     </label>
                     <input
                         type="date"
+                        lang="en-GB"
                         value={value.to || ''}
                         onChange={handleToChange}
                         min={value.from || undefined}

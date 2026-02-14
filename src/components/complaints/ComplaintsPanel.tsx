@@ -1,8 +1,10 @@
 'use client';
 
-import { fetchComplaintTimeline } from '@/app/[locale]/dashboard/company/complaints/actions';
+import { fetchComplaintTimeline, approveComplaintResolution, resolveComplaint } from '@/app/[locale]/dashboard/company/complaints/actions';
 import type { ComplaintRow, TimelineEntry } from '@/lib/services/complaints-service';
 import { cn } from '@/lib/utils';
+import { useFilters } from '@/lib/context/FilterContext';
+import { useScope } from '@/lib/context/ScopeContext';
 import {
     AlertTriangle,
     ArrowUpRight,
@@ -20,10 +22,13 @@ import {
     XCircle,
 } from 'lucide-react';
 import { useLocale } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface ComplaintsPanelProps {
     complaints: ComplaintRow[];
+    currentUserId: string;
+    isAdmin: boolean;
 }
 
 // ── Status Config ──
@@ -149,21 +154,95 @@ function formatSLARemaining(slaDeadline: string, isArabic: boolean): { text: str
 type TabKey = 'active' | 'history';
 
 // ── Main Panel ──
-export function ComplaintsPanel({ complaints }: ComplaintsPanelProps) {
+export function ComplaintsPanel({ complaints, currentUserId, isAdmin }: ComplaintsPanelProps) {
     const locale = useLocale();
     const isArabic = locale === 'ar';
     const [activeTab, setActiveTab] = useState<TabKey>('active');
     const [timelineModal, setTimelineModal] = useState<{ complaint: ComplaintRow; timeline: TimelineEntry[] } | null>(null);
     const [loadingTimelineId, setLoadingTimelineId] = useState<string | null>(null);
+    const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+    const [resolveModalId, setResolveModalId] = useState<string | null>(null);
+    const router = useRouter();
 
-    // Split into active vs history
+    // ── Cascade Filters from FilterContext ──
+    const { filters } = useFilters();
+    const { filteredFieldUsers, filteredBranches } = useScope();
+
+    const selectedTeamLeaderId = filters.teamLeaderId;
+    const selectedFieldUserId = filters.fieldStaffId;
+    const selectedChainId = filters.chainId;
+    const selectedRegionId = filters.regionId;
+    const selectedBranchId = filters.branchId;
+
+    // ── Apply cascade filters to complaints ──
+    const filteredComplaints = useMemo(() => {
+        let result = complaints;
+
+        // Date range filter (From/To)
+        if (filters.dateRange.from) {
+            const from = new Date(filters.dateRange.from);
+            from.setHours(0, 0, 0, 0);
+            result = result.filter((c) => new Date(c.createdAt) >= from);
+        }
+        if (filters.dateRange.to) {
+            const to = new Date(filters.dateRange.to);
+            to.setHours(23, 59, 59, 999);
+            result = result.filter((c) => new Date(c.createdAt) <= to);
+        }
+
+        // Branch filter (direct marketId match)
+        if (selectedBranchId) {
+            result = result.filter((c) => c.marketId === selectedBranchId);
+        }
+
+        // Chain filter → branches in chain → filter by marketId
+        if (selectedChainId && !selectedBranchId) {
+            const chainBranchIds = new Set(
+                filteredBranches.filter((b) => b.chain_id === selectedChainId).map((b) => b.id)
+            );
+            if (chainBranchIds.size > 0) {
+                result = result.filter((c) => c.marketId && chainBranchIds.has(c.marketId));
+            }
+        }
+
+        // Region filter → branches in region → filter by marketId
+        if (selectedRegionId && !selectedBranchId) {
+            const regionBranchIds = new Set(
+                filteredBranches.filter((b) => b.region_id === selectedRegionId).map((b) => b.id)
+            );
+            if (regionBranchIds.size > 0) {
+                result = result.filter((c) => c.marketId && regionBranchIds.has(c.marketId));
+            }
+        }
+
+        // Field user filter (direct requesterId match)
+        if (selectedFieldUserId) {
+            result = result.filter((c) => c.requesterId === selectedFieldUserId);
+        }
+
+        // Team leader filter → team's field users → filter by requesterId
+        if (selectedTeamLeaderId && !selectedFieldUserId) {
+            const teamUserIds = new Set(
+                filteredFieldUsers
+                    .filter((u) => u.team_leader_account_id === selectedTeamLeaderId)
+                    .map((u) => u.user_id)
+            );
+            if (teamUserIds.size > 0) {
+                result = result.filter((c) => teamUserIds.has(c.requesterId));
+            }
+        }
+
+        return result;
+    }, [complaints, filters.dateRange.from, filters.dateRange.to, selectedBranchId, selectedChainId, selectedRegionId, selectedFieldUserId, selectedTeamLeaderId, filteredFieldUsers, filteredBranches]);
+
+    // Split into active vs history (using filtered complaints)
     const activeComplaints = useMemo(
-        () => complaints.filter((c) => c.status !== null && ACTIVE_STATUSES.has(c.status)),
-        [complaints]
+        () => filteredComplaints.filter((c) => c.status !== null && ACTIVE_STATUSES.has(c.status)),
+        [filteredComplaints]
     );
     const historyComplaints = useMemo(
-        () => complaints.filter((c) => c.status === null || !ACTIVE_STATUSES.has(c.status)),
-        [complaints]
+        () => filteredComplaints.filter((c) => c.status === null || !ACTIVE_STATUSES.has(c.status)),
+        [filteredComplaints]
     );
 
     const openTimeline = async (complaint: ComplaintRow) => {
@@ -187,6 +266,34 @@ export function ComplaintsPanel({ complaints }: ComplaintsPanelProps) {
         }
     };
 
+    const handleApprove = async (complaintId: string) => {
+        setActionLoadingId(complaintId);
+        const result = await approveComplaintResolution(complaintId);
+        setActionLoadingId(null);
+        if (result.success) {
+            router.refresh();
+        } else {
+            console.error('Approve failed:', result.error);
+        }
+    };
+
+    const openResolveModal = (complaintId: string) => {
+        setResolveModalId(complaintId);
+    };
+
+    const handleResolveSubmit = async (notes: string) => {
+        if (!resolveModalId) return;
+        setActionLoadingId(resolveModalId);
+        const result = await resolveComplaint(resolveModalId, notes);
+        setActionLoadingId(null);
+        setResolveModalId(null);
+        if (result.success) {
+            router.refresh();
+        } else {
+            console.error('Resolve failed:', result.error);
+        }
+    };
+
     const tabs: { key: TabKey; labelEn: string; labelAr: string; count: number; icon: React.ReactNode }[] = [
         {
             key: 'active',
@@ -205,8 +312,8 @@ export function ComplaintsPanel({ complaints }: ComplaintsPanelProps) {
     ];
 
     const columns = isArabic
-        ? ['الحالة', 'مقدم الشكوى', 'التصنيف', 'الوصف', 'الفرع', 'القسم', 'SLA', 'تاريخ الإنشاء', 'التفاصيل']
-        : ['Status', 'Requester', 'Category', 'Description', 'Branch', 'Division', 'SLA', 'Created', 'Details'];
+        ? ['الحالة', 'مقدم الشكوى', 'التصنيف', 'الوصف', 'الفرع', 'القسم', 'SLA', 'تاريخ الإنشاء', 'الإجراءات', 'التفاصيل']
+        : ['Status', 'Requester', 'Category', 'Description', 'Branch', 'Division', 'SLA', 'Created', 'Actions', 'Details'];
 
     return (
         <div className="space-y-5">
@@ -250,6 +357,11 @@ export function ComplaintsPanel({ complaints }: ComplaintsPanelProps) {
                     isArabic={isArabic}
                     loadingTimelineId={loadingTimelineId}
                     onOpenTimeline={openTimeline}
+                    currentUserId={currentUserId}
+                    actionLoadingId={actionLoadingId}
+                    onApprove={handleApprove}
+                    onResolve={openResolveModal}
+                    showActions={true}
                 />
             )}
 
@@ -273,6 +385,16 @@ export function ComplaintsPanel({ complaints }: ComplaintsPanelProps) {
                     onClose={() => setTimelineModal(null)}
                 />
             )}
+
+            {/* ── Resolve Modal (Notes Input) ── */}
+            {resolveModalId && (
+                <ResolveModal
+                    isArabic={isArabic}
+                    isLoading={actionLoadingId === resolveModalId}
+                    onSubmit={handleResolveSubmit}
+                    onClose={() => setResolveModalId(null)}
+                />
+            )}
         </div>
     );
 }
@@ -284,12 +406,22 @@ function ComplaintsTable({
     isArabic,
     loadingTimelineId,
     onOpenTimeline,
+    currentUserId,
+    actionLoadingId,
+    onApprove,
+    onResolve,
+    showActions = false,
 }: {
     rows: ComplaintRow[];
     columns: string[];
     isArabic: boolean;
     loadingTimelineId: string | null;
     onOpenTimeline: (complaint: ComplaintRow) => void;
+    currentUserId?: string;
+    actionLoadingId?: string | null;
+    onApprove?: (id: string) => void;
+    onResolve?: (id: string) => void;
+    showActions?: boolean;
 }) {
     return (
         <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
@@ -376,6 +508,53 @@ function ComplaintsTable({
                                         </td>
                                         <td className="px-4 py-3 whitespace-nowrap text-muted-foreground text-xs">
                                             {formatDateTime(row.createdAt, isArabic)}
+                                        </td>
+                                        {/* Action Buttons */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            {showActions ? (
+                                                <div className="flex items-center gap-1.5">
+                                                    {/* Approve Resolution — when status is waiting_approval */}
+                                                    {row.status === 'waiting_approval' && (
+                                                        <button
+                                                            onClick={() => onApprove?.(row.id)}
+                                                            disabled={actionLoadingId === row.id}
+                                                            className={cn(
+                                                                'inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium',
+                                                                'bg-green-600/10 text-green-600 hover:bg-green-600/20 transition-all duration-200',
+                                                                'disabled:opacity-50',
+                                                            )}
+                                                        >
+                                                            {actionLoadingId === row.id ? (
+                                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                                            ) : (
+                                                                <CheckCircle2 className="h-3 w-3" />
+                                                            )}
+                                                            {isArabic ? 'تأكيد الحل' : 'Approve'}
+                                                        </button>
+                                                    )}
+                                                    {/* Resolve — for pending, escalated, or breached */}
+                                                    {(row.status === 'pending' || row.status === 'escalated' || row.status === 'breached') && (
+                                                        <button
+                                                            onClick={() => onResolve?.(row.id)}
+                                                            disabled={actionLoadingId === row.id}
+                                                            className={cn(
+                                                                'inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium',
+                                                                'bg-blue-600/10 text-blue-600 hover:bg-blue-600/20 transition-all duration-200',
+                                                                'disabled:opacity-50',
+                                                            )}
+                                                        >
+                                                            {actionLoadingId === row.id ? (
+                                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                                            ) : (
+                                                                <Shield className="h-3 w-3" />
+                                                            )}
+                                                            {isArabic ? 'حل المشكلة' : 'Resolve'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground/50">—</span>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <button
@@ -605,6 +784,93 @@ function StatCard({
                 <span className="text-[11px] font-medium">{isArabic ? labelAr : labelEn}</span>
             </div>
             <p className={cn('text-sm font-bold truncate', highlightClasses)}>{value}</p>
+        </div>
+    );
+}
+
+// ── Resolve Modal ──
+function ResolveModal({
+    isArabic,
+    isLoading,
+    onSubmit,
+    onClose,
+}: {
+    isArabic: boolean;
+    isLoading: boolean;
+    onSubmit: (notes: string) => void;
+    onClose: () => void;
+}) {
+    const [notes, setNotes] = useState('');
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="mx-4 w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-2xl">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-border/40 px-5 py-4">
+                    <div className="flex items-center gap-2">
+                        <Shield className="h-5 w-5 text-blue-500" />
+                        <h3 className="text-lg font-semibold">
+                            {isArabic ? 'حل المشكلة' : 'Resolve Complaint'}
+                        </h3>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted/50 transition"
+                    >
+                        <X className="h-4 w-4" />
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="px-5 py-4 space-y-3">
+                    <label className="block text-sm font-medium text-muted-foreground">
+                        {isArabic ? 'ماذا تم عمله لحل المشكلة؟' : 'What was done to resolve this?'}
+                    </label>
+                    <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        rows={4}
+                        className={cn(
+                            'w-full rounded-xl border border-border/60 bg-background px-4 py-3 text-sm',
+                            'placeholder-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30',
+                            'resize-none',
+                        )}
+                        placeholder={isArabic ? 'اكتب تفاصيل الحل...' : 'Describe the resolution...'}
+                        dir={isArabic ? 'rtl' : 'ltr'}
+                    />
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-end gap-2 border-t border-border/40 px-5 py-3">
+                    <button
+                        onClick={onClose}
+                        disabled={isLoading}
+                        className={cn(
+                            'rounded-lg px-4 py-2 text-sm font-medium',
+                            'text-muted-foreground hover:bg-muted/50 transition',
+                            'disabled:opacity-50',
+                        )}
+                    >
+                        {isArabic ? 'إلغاء' : 'Cancel'}
+                    </button>
+                    <button
+                        onClick={() => onSubmit(notes)}
+                        disabled={isLoading || !notes.trim()}
+                        className={cn(
+                            'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold',
+                            'bg-blue-600 text-white hover:bg-blue-700 transition',
+                            'disabled:opacity-50 disabled:cursor-not-allowed',
+                        )}
+                    >
+                        {isLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                            <CheckCircle2 className="h-4 w-4" />
+                        )}
+                        {isArabic ? 'تأكيد الحل' : 'Confirm Resolution'}
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }

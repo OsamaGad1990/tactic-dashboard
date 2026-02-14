@@ -1,7 +1,7 @@
 'use server';
 
 import { getPortalUser } from '@/lib/supabase/portal-user';
-import { getUserClientId } from '@/lib/services/client';
+import { getUserClientId, getUserDivisionId } from '@/lib/services/client';
 import { db } from '@/lib/db';
 import { notifications } from '@/lib/db/schema';
 
@@ -23,8 +23,12 @@ export async function sendAttendanceNotification(input: {
         const clientId = await getUserClientId(user.id);
         if (!clientId) return { error: 'No client association' };
 
+        const divisionId = await getUserDivisionId(user.id);
+
         await db.insert(notifications).values({
             clientId,
+            divisionId,
+            teamLeader: user.id,
             titleEn: input.titleEn.trim(),
             titleAr: input.titleAr.trim(),
             messageEn: input.messageEn.trim(),

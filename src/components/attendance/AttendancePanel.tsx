@@ -4,6 +4,7 @@ import { useState, useMemo, useTransition } from 'react';
 import { useToast } from '@/components/providers/toast-provider';
 import { useLocale } from 'next-intl';
 import { useScope } from '@/lib/context/ScopeContext';
+import { useFilters } from '@/lib/context/FilterContext';
 import { sendAttendanceNotification } from '@/app/[locale]/dashboard/company/attendance/actions';
 import {
     Search,
@@ -392,11 +393,12 @@ export function AttendancePanel({ checkInMap, liveStatusMap }: AttendancePanelPr
     const {
         scope,
         isLoading,
-        selectedTeamLeaderId,
-        selectedFieldUserId,
-        filteredFieldUsers,
-        filteredTeamLeaders,
     } = useScope();
+
+    // ── Get selected filters from FilterContext (same source as GlobalFilterBar) ──
+    const { filters } = useFilters();
+    const selectedTeamLeaderId = filters.teamLeaderId;
+    const selectedFieldUserId = filters.fieldStaffId;
 
     // Build team leader name lookup
     const teamLeaderNameMap = useMemo(() => {
@@ -409,47 +411,79 @@ export function AttendancePanel({ checkInMap, liveStatusMap }: AttendancePanelPr
         return map;
     }, [scope?.team_leaders]);
 
-    // Build attendance user list from scope field users + server-side data
+    // Build attendance user list from scope team leaders + field users + server-side data
     const allUsers = useMemo<AttendanceUser[]>(() => {
-        if (!scope?.field_users) return [];
+        const users: AttendanceUser[] = [];
 
-        return scope.field_users.map((fu) => {
-            const lastSeen = liveStatusMap[fu.user_id] ?? null;
-            const isOnline = lastSeen
-                ? (Date.now() - new Date(lastSeen).getTime()) < ONLINE_THRESHOLD_MS
-                : false;
+        // 1. Add team leaders
+        if (scope?.team_leaders) {
+            for (const tl of scope.team_leaders) {
+                const lastSeen = liveStatusMap[tl.team_leader_id] ?? null;
+                const isOnline = lastSeen
+                    ? (Date.now() - new Date(lastSeen).getTime()) < ONLINE_THRESHOLD_MS
+                    : false;
 
-            return {
-                userId: fu.user_id,
-                name: fu.name || 'Unknown',
-                role: fu.role || 'promoter',
-                teamLeaderName: teamLeaderNameMap.get(fu.team_leader_account_id) ?? null,
-                firstCheckIn: checkInMap[fu.user_id] ?? null,
-                isOnline,
-                lastSeen,
-            };
-        });
-    }, [scope?.field_users, checkInMap, liveStatusMap, teamLeaderNameMap]);
+                // Find manager name for team leader's supervisor
+                const managerName = scope.managers?.find(m => m.id === tl.manager_id)?.name ?? null;
+
+                users.push({
+                    userId: tl.team_leader_id,
+                    name: tl.name || 'Unknown',
+                    role: tl.role || 'team_leader',
+                    teamLeaderName: managerName,
+                    firstCheckIn: checkInMap[tl.team_leader_id] ?? null,
+                    isOnline,
+                    lastSeen,
+                });
+            }
+        }
+
+        // 2. Add field users
+        if (scope?.field_users) {
+            for (const fu of scope.field_users) {
+                // Skip if already added as team leader (prevent duplicates)
+                if (users.some(u => u.userId === fu.user_id)) continue;
+
+                const lastSeen = liveStatusMap[fu.user_id] ?? null;
+                const isOnline = lastSeen
+                    ? (Date.now() - new Date(lastSeen).getTime()) < ONLINE_THRESHOLD_MS
+                    : false;
+
+                users.push({
+                    userId: fu.user_id,
+                    name: fu.name || 'Unknown',
+                    role: fu.role || 'promoter',
+                    teamLeaderName: teamLeaderNameMap.get(fu.team_leader_account_id) ?? null,
+                    firstCheckIn: checkInMap[fu.user_id] ?? null,
+                    isOnline,
+                    lastSeen,
+                });
+            }
+        }
+
+        return users;
+    }, [scope?.team_leaders, scope?.field_users, scope?.managers, checkInMap, liveStatusMap, teamLeaderNameMap]);
 
     // ── Filter by global filters + local filters ──
     const filtered = useMemo(() => {
         let result = allUsers;
 
-        // Field user filter
+        // Field user filter (specific user selected)
         if (selectedFieldUserId) {
             result = result.filter((u) => u.userId === selectedFieldUserId);
         }
 
-        // Team leader filter
+        // Team leader filter: show the TL themselves + their field users
         if (selectedTeamLeaderId && !selectedFieldUserId) {
+            const fieldUsers = scope?.field_users ?? [];
             const teamUserIds = new Set(
-                filteredFieldUsers
+                fieldUsers
                     .filter((u) => u.team_leader_account_id === selectedTeamLeaderId)
                     .map((u) => u.user_id)
             );
-            if (teamUserIds.size > 0) {
-                result = result.filter((u) => teamUserIds.has(u.userId));
-            }
+            // Also include the team leader themselves
+            teamUserIds.add(selectedTeamLeaderId);
+            result = result.filter((u) => teamUserIds.has(u.userId));
         }
 
         // Status filter
@@ -469,7 +503,7 @@ export function AttendancePanel({ checkInMap, liveStatusMap }: AttendancePanelPr
         }
 
         return result;
-    }, [allUsers, search, statusFilter, selectedFieldUserId, selectedTeamLeaderId, filteredFieldUsers]);
+    }, [allUsers, search, statusFilter, selectedFieldUserId, selectedTeamLeaderId, scope?.field_users]);
 
     const stats = useMemo<AttendanceStats>(() => ({
         total: filtered.length,

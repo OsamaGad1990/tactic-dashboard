@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useLocale } from 'next-intl';
 import { useScope } from '@/lib/context/ScopeContext';
+import { useFilters } from '@/lib/context/FilterContext';
 import {
     Search,
     Clock,
@@ -172,15 +173,6 @@ function VisitRow({ visit, isArabic }: { visit: YesterdayVisit; isArabic: boolea
     );
 }
 
-// ── Status Filter Options ──
-const STATUS_FILTERS = [
-    { key: 'all', en: 'All', ar: 'الكل' },
-    { key: 'completed', en: 'Completed', ar: 'مكتمل' },
-    { key: 'cancelled', en: 'Cancelled', ar: 'ملغي' },
-    { key: 'in_progress', en: 'In Progress', ar: 'قيد التنفيذ' },
-    { key: 'pending', en: 'Pending', ar: 'معلّقة' },
-];
-
 // ── Main Panel ──
 interface YesterdayVisitsPanelProps {
     visits: YesterdayVisit[];
@@ -191,18 +183,20 @@ export function YesterdayVisitsPanel({ visits, stats: initialStats }: YesterdayV
     const locale = useLocale();
     const isArabic = locale === 'ar';
     const [search, setSearch] = useState('');
-    const [statusFilter, setStatusFilter] = useState<string>('all');
+    const { filters } = useFilters();
 
-    // ── ALL Global Scope Filters ──
+    // ── Scope data for cascade resolution ──
     const {
-        selectedTeamLeaderId,
-        selectedFieldUserId,
-        selectedChainId,
-        selectedRegionId,
-        selectedBranchId,
         filteredFieldUsers,
         filteredBranches,
     } = useScope();
+
+    // ── Selected filter IDs from GlobalFilterBar (FilterContext) ──
+    const selectedTeamLeaderId = filters.teamLeaderId;
+    const selectedFieldUserId = filters.fieldStaffId;
+    const selectedChainId = filters.chainId;
+    const selectedRegionId = filters.regionId;
+    const selectedBranchId = filters.branchId;
 
     // ── Filter visits by ALL global filters ──
     const filtered = useMemo(() => {
@@ -250,14 +244,15 @@ export function YesterdayVisitsPanel({ visits, stats: initialStats }: YesterdayV
             }
         }
 
-        // 6. Status filter
-        if (statusFilter !== 'all') {
+        // 6. Status filter (from global filter bar)
+        const statusFilter = filters.visitStatus;
+        if (statusFilter) {
             result = result.filter((v) => {
                 const s = v.outcomeStatus || v.status;
                 if (statusFilter === 'completed') return s === 'completed' || s === 'finished';
                 if (statusFilter === 'cancelled') return s === 'cancelled';
-                if (statusFilter === 'in_progress') return s === 'in_progress' || s === 'started';
-                if (statusFilter === 'pending') return s === 'pending';
+                // 'pending' = everything NOT completed/finished/cancelled (matches VisitRow STATUS_CONFIG fallback)
+                if (statusFilter === 'pending') return s !== 'completed' && s !== 'finished' && s !== 'cancelled';
                 return true;
             });
         }
@@ -274,7 +269,7 @@ export function YesterdayVisitsPanel({ visits, stats: initialStats }: YesterdayV
         }
 
         return result;
-    }, [visits, search, statusFilter, selectedFieldUserId, selectedTeamLeaderId, selectedChainId, selectedRegionId, selectedBranchId, filteredFieldUsers, filteredBranches]);
+    }, [visits, search, filters.visitStatus, filters.fieldStaffId, filters.teamLeaderId, filters.chainId, filters.regionId, filters.branchId, filteredFieldUsers, filteredBranches]);
 
     // Recompute stats based on filtered visits
     const stats = useMemo(() => computeYesterdayStats(filtered), [filtered]);
@@ -303,20 +298,6 @@ export function YesterdayVisitsPanel({ visits, stats: initialStats }: YesterdayV
                         className="w-full rounded-xl border border-border bg-card/50 py-2.5 ps-10 pe-4 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
                     />
                 </div>
-                <div className="flex gap-1.5 flex-wrap">
-                    {STATUS_FILTERS.map((f) => (
-                        <button
-                            key={f.key}
-                            onClick={() => setStatusFilter(f.key)}
-                            className={`rounded-lg px-3 py-2 text-xs font-medium transition-all ${statusFilter === f.key
-                                ? 'bg-primary text-primary-foreground shadow-sm'
-                                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                                }`}
-                        >
-                            {isArabic ? f.ar : f.en}
-                        </button>
-                    ))}
-                </div>
             </div>
 
             {/* Visit List */}
@@ -324,7 +305,7 @@ export function YesterdayVisitsPanel({ visits, stats: initialStats }: YesterdayV
                 <div className="flex flex-col items-center justify-center py-16 gap-3">
                     <Clock className="h-12 w-12 text-muted-foreground/30" />
                     <p className="text-sm text-muted-foreground">
-                        {search || statusFilter !== 'all' || selectedTeamLeaderId || selectedFieldUserId || selectedChainId || selectedRegionId || selectedBranchId
+                        {search || filters.visitStatus || selectedTeamLeaderId || selectedFieldUserId || selectedChainId || selectedRegionId || selectedBranchId
                             ? (isArabic ? 'لا توجد نتائج مطابقة' : 'No matching visits found')
                             : (isArabic ? 'لا توجد زيارات لأمس' : 'No visits found for yesterday')}
                     </p>

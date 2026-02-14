@@ -227,7 +227,8 @@
         "yesterday_visits": "زيارات أمس",
         "complaints": "الشكاوى",
         "attendance": "الحضور",
-        "live_tracking": "التحركات لحظياً"
+        "live_tracking": "التحركات لحظياً",
+        "fraud_release": "تحرير المتلاعبين"
     },
     "filters": {
         "title": "الفلاتر",
@@ -272,6 +273,8 @@
         "traceLoading": "جاري تحميل المسار...",
         "fakeGpsSegment": "تم اكتشاف GPS مزيف",
         "teleportDetected": "تم اكتشاف انتقال مستحيل",
-        "offlineGhost": "غير متصل - وضع الشبح"
+        "offlineGhost": "غير متصل - وضع الشبح",
+        "activeDrivers": "المستخدمين النشطين",
+        "noOnlineDrivers": "لا يوجد سائقين متصلين حالياً"
     }
 }

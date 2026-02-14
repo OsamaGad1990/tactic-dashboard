@@ -252,7 +252,7 @@ export function DashboardHeader({ userName, userRole, avatarUrl, userId, onMenuT
                         {/* Clickable Avatar */}
                         <button
                             onClick={() => setIsAvatarModalOpen(true)}
-                            className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary text-sm font-semibold hover:ring-2 hover:ring-primary/50 transition-all overflow-hidden"
+                            className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary text-sm font-semibold hover:ring-2 hover:ring-primary/50 transition-all overflow-hidden cursor-pointer"
                         >
                             {currentAvatar ? (
                                 <Image
@@ -293,7 +293,7 @@ export function DashboardHeader({ userName, userRole, avatarUrl, userId, onMenuT
                             size="icon"
                             onClick={handleLogout}
                             disabled={isLoggingOut}
-                            className="text-muted-foreground hover:text-destructive"
+                            className="text-muted-foreground hover:text-destructive cursor-pointer"
                             title={tNav('logout')}
                         >
                             <LogOut className={cn('h-5 w-5', isLoggingOut && 'animate-pulse')} />

@@ -22,6 +22,7 @@ import { useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState, useMemo, useTransition } from 'react';
 import { useFilters } from '@/lib/context/FilterContext';
+import { useScope } from '@/lib/context/ScopeContext';
 
 interface VisitRequestsPanelProps {
     pendingRequests: VisitRequest[];
@@ -245,8 +246,26 @@ export function VisitRequestsPanel({ pendingRequests, allRequests }: VisitReques
     const isArabic = locale === 'ar';
     const [activeTab, setActiveTab] = useState<TabKey>('pending');
     const { filters } = useFilters();
+    const { scope } = useScope();
 
-    // ── Apply global filters (date range + field staff) ──
+    // Build TL ID set for attribution
+    const teamLeaderIds = useMemo(() => {
+        if (!scope?.team_leaders) return new Set<string>();
+        return new Set(scope.team_leaders.map(tl => tl.team_leader_id));
+    }, [scope?.team_leaders]);
+
+    // Build field user -> TL mapping for team leader filter
+    const fieldUserToTL = useMemo(() => {
+        const map = new Map<string, string>();
+        if (scope?.field_users) {
+            for (const fu of scope.field_users) {
+                map.set(fu.user_id, fu.team_leader_account_id);
+            }
+        }
+        return map;
+    }, [scope?.field_users]);
+
+    // ── Apply global filters (date range + field staff + team leader) ──
     const filterByDateAndStaff = useMemo(() => {
         return <T extends { requestedAt: string; requesterAccountId: string }>(items: T[]) => {
             return items.filter((item) => {
@@ -267,10 +286,15 @@ export function VisitRequestsPanel({ pendingRequests, allRequests }: VisitReques
                 if (filters.fieldStaffId && item.requesterAccountId !== filters.fieldStaffId) {
                     return false;
                 }
+                // Team leader filter: show requests from users under this TL
+                if (filters.teamLeaderId) {
+                    const userTL = fieldUserToTL.get(item.requesterAccountId);
+                    if (userTL !== filters.teamLeaderId) return false;
+                }
                 return true;
             });
         };
-    }, [filters.dateRange.from, filters.dateRange.to, filters.fieldStaffId]);
+    }, [filters.dateRange.from, filters.dateRange.to, filters.fieldStaffId, filters.teamLeaderId, fieldUserToTL]);
 
     const filteredPending = useMemo(() => filterByDateAndStaff(pendingRequests), [filterByDateAndStaff, pendingRequests]);
     const filteredAll = useMemo(() => filterByDateAndStaff(allRequests), [filterByDateAndStaff, allRequests]);
@@ -292,8 +316,36 @@ export function VisitRequestsPanel({ pendingRequests, allRequests }: VisitReques
         },
     ];
 
-    // History = all non-pending requests
-    const historyRows = filteredAll.filter(r => r.status !== 'pending');
+    // History = all non-pending requests, filtered by global status + speed filters
+    const statusFilter = filters.requestStatus;
+    const speedFilter = filters.completionSpeed;
+
+    const historyRows = useMemo(() => {
+        let rows = filteredAll.filter(r => r.status !== 'pending');
+
+        // Status filter
+        if (statusFilter) {
+            if (statusFilter === 'auto_approved') {
+                rows = rows.filter(r => r.autoApproved);
+            } else {
+                rows = rows.filter(r => r.status === statusFilter && !r.autoApproved);
+            }
+        }
+
+        // Speed filter (based on waitSeconds)
+        if (speedFilter) {
+            rows = rows.filter(r => {
+                if (!r.waitSeconds || r.waitSeconds <= 0) return false;
+                const mins = r.waitSeconds / 60;
+                if (speedFilter === 'fast') return mins >= 1 && mins <= 5;
+                if (speedFilter === 'medium') return mins > 5 && mins <= 10;
+                if (speedFilter === 'slow') return mins > 10;
+                return true;
+            });
+        }
+
+        return rows;
+    }, [filteredAll, statusFilter, speedFilter]);
 
     // Table column headers
     const columns = isArabic
@@ -391,11 +443,15 @@ export function VisitRequestsPanel({ pendingRequests, allRequests }: VisitReques
                                         const requester = isArabic
                                             ? (row.requesterArabicName || row.requesterName)
                                             : row.requesterName;
-                                        const approver = row.approverName
+                                        const approverName = row.approverName
                                             ? (isArabic ? (row.approverArabicName || row.approverName) : row.approverName)
                                             : (row.autoApproved
                                                 ? (isArabic ? 'النظام' : 'System')
                                                 : '—');
+                                        // Check if approver is admin (not a TL)
+                                        const isAdminApproval = row.approverAccountId
+                                            && !row.autoApproved
+                                            && !teamLeaderIds.has(row.approverAccountId);
 
                                         return (
                                             <tr
@@ -412,7 +468,12 @@ export function VisitRequestsPanel({ pendingRequests, allRequests }: VisitReques
                                                     {requester}
                                                 </td>
                                                 <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                                                    {approver}
+                                                    <span>{approverName}</span>
+                                                    {isAdminApproval && (
+                                                        <span className="ms-1.5 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                                                            {isArabic ? 'أدمن' : 'Admin'}
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
                                                     {isArabic

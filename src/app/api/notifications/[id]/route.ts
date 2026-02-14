@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getNotificationDetails } from '@/lib/services/notifications-service';
 import { getPortalUser } from '@/lib/supabase/portal-user';
+import { getUserClientId } from '@/lib/services/client';
 
 export async function GET(
     request: NextRequest,
@@ -12,11 +13,14 @@ export async function GET(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { id } = await params;
-        console.log('[API /notifications/:id] Fetching details for:', id);
+        const clientId = await getUserClientId(user.id);
+        if (!clientId) {
+            return NextResponse.json({ error: 'No client association' }, { status: 403 });
+        }
 
-        const data = await getNotificationDetails(id);
-        console.log('[API /notifications/:id] Result:', data ? 'found' : 'null');
+        const { id } = await params;
+
+        const data = await getNotificationDetails(id, clientId);
 
         if (!data) {
             return NextResponse.json({ error: 'Notification not found' }, { status: 404 });

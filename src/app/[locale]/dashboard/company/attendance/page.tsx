@@ -25,7 +25,7 @@ export async function generateMetadata({
  * Fetch check-in times (first visit today per user) and live status.
  * User list comes from ScopeContext on the client side.
  */
-async function getCheckInData(clientId: string) {
+async function getCheckInData(clientId: string, divisionId?: string | null) {
     try {
         // First visit today per user
         const checkIns = await db.execute(sql`
@@ -36,6 +36,7 @@ async function getCheckInData(clientId: string) {
             WHERE client_id = ${clientId}::uuid
               AND visit_date = CURRENT_DATE
               AND actual_start IS NOT NULL
+              ${divisionId ? sql`AND division_id = ${divisionId}::uuid` : sql``}
             GROUP BY user_id
         `);
 
@@ -114,7 +115,7 @@ export default async function AttendancePage({
 
     // Fetch check-in and live status data server-side
     const [checkInMap, liveStatusMap] = await Promise.all([
-        getCheckInData(clientId),
+        getCheckInData(clientId, divisionId),
         getLiveStatusData(clientId),
     ]);
 
@@ -135,7 +136,7 @@ export default async function AttendancePage({
 
             {/* Global Filters + Panel */}
             <ScopeProvider clientId={clientId} divisionId={divisionId} managerAccountId={user.id}>
-                <DashboardFilters userAccountId={user.id} clientId={clientId} />
+                <DashboardFilters userAccountId={user.id} clientId={clientId} showLocationFilters={false} />
                 <AttendancePanel checkInMap={checkInMap} liveStatusMap={liveStatusMap} />
             </ScopeProvider>
         </div>

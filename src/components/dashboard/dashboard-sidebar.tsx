@@ -25,6 +25,7 @@ import {
     MapPin,
     MessageSquareWarning,
     UserCheck,
+    ShieldAlert,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -37,6 +38,7 @@ interface NavItem {
 // Feature keys that gate specific nav items
 const FEATURE_GATED_ROUTES: Record<string, string> = {
     'live-tracking': 'live_tracking',
+    'visit-requests': 'visit.offroute_approval_required',
 };
 
 // Role-based navigation items
@@ -77,6 +79,7 @@ function getNavItems(role: PortalRole, locale: string, t: (key: string) => strin
             { label: t('complaints'), href: `/${locale}/dashboard/company/complaints`, icon: <MessageSquareWarning className="h-5 w-5" /> },
             { label: t('attendance'), href: `/${locale}/dashboard/company/attendance`, icon: <UserCheck className="h-5 w-5" /> },
             { label: t('live_tracking'), href: `/${locale}/dashboard/company/live-tracking`, icon: <MapPin className="h-5 w-5" /> },
+            { label: t('fraud_release'), href: `/${locale}/dashboard/company/fraud-release`, icon: <ShieldAlert className="h-5 w-5" /> },
         );
     }
 
@@ -129,8 +132,13 @@ export function DashboardSidebar({ portalRole, enabledFeatures = [] }: Dashboard
         >
             {/* Navigation Links */}
             <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-                {navItems.map((item) => {
-                    const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                {navItems.map((item, index) => {
+                    // Overview items (first in each role's list) should be exact match only
+                    // to prevent staying active when navigating to sub-pages
+                    const isOverview = index === 0;
+                    const isActive = isOverview
+                        ? pathname === item.href
+                        : pathname === item.href || pathname.startsWith(item.href + '/');
                     return (
                         <Link
                             key={item.href}

@@ -1,3 +1,4 @@
+import { DashboardFilters } from '@/components/filters/DashboardFilters';
 import { LiveMapContainer } from '@/components/tracking/LiveMapContainer';
 import { ScopeProvider } from '@/lib/context/ScopeContext';
 import { getUserClientId, getUserDivisionId } from '@/lib/services/client';
@@ -126,6 +127,7 @@ export default async function LiveTrackingPage({
 
             {/* Live Map */}
             <ScopeProvider clientId={clientId} divisionId={divisionId} managerAccountId={user.id}>
+                <DashboardFilters userAccountId={user.id} clientId={clientId} showLocationFilters={false} />
                 <LiveMapContainer clientId={clientId} />
             </ScopeProvider>
         </div>

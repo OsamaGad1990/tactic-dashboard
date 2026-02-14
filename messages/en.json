@@ -227,7 +227,8 @@
         "yesterday_visits": "Yesterday's Visits",
         "complaints": "Complaints",
         "attendance": "Attendance",
-        "live_tracking": "Live Tracking"
+        "live_tracking": "Live Tracking",
+        "fraud_release": "Fraud Release"
     },
     "filters": {
         "title": "Filters",
@@ -272,6 +273,8 @@
         "traceLoading": "Loading trace...",
         "fakeGpsSegment": "Fake GPS Detected",
         "teleportDetected": "Teleportation Detected",
-        "offlineGhost": "Offline - Ghost Mode"
+        "offlineGhost": "Offline - Ghost Mode",
+        "activeDrivers": "Active Drivers",
+        "noOnlineDrivers": "No online drivers at the moment"
     }
 }

@@ -29,7 +29,7 @@ export function LanguageSwitcher() {
             variant="ghost"
             size="sm"
             onClick={switchLocale}
-            className="gap-2"
+            className="gap-2 cursor-pointer"
         >
             <Languages className="h-4 w-4" />
             <span>{t('switch')}</span>

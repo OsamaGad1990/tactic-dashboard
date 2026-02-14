@@ -53,6 +53,9 @@ export const accounts = pgTable('accounts', {
     fieldRole: text('field_role'),
     portalRole: text('portal_role'),
     accountStatus: text('account_status'),
+    isFraudLocked: boolean('is_fraud_locked').default(false),
+    fraudLockReason: text('fraud_lock_reason').array(),
+    fraudUnlockCount: integer('fraud_unlock_count').default(0),
 });
 
 // Client Portal User Roles table
@@ -179,16 +182,32 @@ export const complaintTimeline = pgTable('complaint_timeline', {
 // Categories table
 export const categories = pgTable('categories', {
     id: uuid('id').primaryKey(),
-    name: text('name'),
+    nameEn: text('name_en'),
     nameAr: text('name_ar'),
 });
 
 // Products table
 export const products = pgTable('products', {
     id: uuid('id').primaryKey(),
-    name: text('name'),
+    nameEn: text('name_en'),
     nameAr: text('name_ar'),
     categoryId: uuid('category_id'),
-    imageUrl: text('image_url'),
-    barcode: text('barcode'),
+    photoPath: text('photo_path'),
+    globalSkuCode: text('global_sku_code'),
+});
+
+// Visit Break Requests table
+export const visitBreakRequests = pgTable('visit_break_requests', {
+    id: uuid('id').primaryKey(),
+    visitId: uuid('visit_id'),
+    userId: uuid('user_id').notNull(),
+    clientId: uuid('client_id').notNull(),
+    requestedMinutes: text('requested_minutes'),
+    status: text('status').notNull(),
+    startsAt: timestamp('starts_at', { withTimezone: true }),
+    endsAt: timestamp('ends_at', { withTimezone: true }),
+    approverId: uuid('approver_id'),
+    rejectionReason: text('rejection_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }),
 });

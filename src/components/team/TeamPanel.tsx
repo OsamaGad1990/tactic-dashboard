@@ -1,5 +1,6 @@
 'use client';
 
+import { useFilters } from '@/lib/context/FilterContext';
 import { useScope, type ScopeFieldUser, type ScopeTeamLeader } from '@/lib/context/ScopeContext';
 import { useLocale } from 'next-intl';
 import { useMemo, useState } from 'react';
@@ -224,16 +225,36 @@ export function TeamPanel() {
         return map;
     }, [filteredTeamLeaders, scope?.team_leaders]);
 
-    // Filter users by search
+    // ── Cascade filters from FilterContext ──
+    const { filters } = useFilters();
+    const selectedTeamLeaderId = filters.teamLeaderId;
+    const selectedFieldUserId = filters.fieldStaffId;
+
+    // Filter users by cascade filters first, then search
     const searchedUsers = useMemo(() => {
-        const users = filteredFieldUsers ?? [];
-        if (!search.trim()) return users;
-        const q = search.toLowerCase();
-        return users.filter((u) =>
-            u.name?.toLowerCase().includes(q) ||
-            u.role?.toLowerCase().includes(q)
-        );
-    }, [filteredFieldUsers, search]);
+        let users = filteredFieldUsers ?? [];
+
+        // Field user filter
+        if (selectedFieldUserId) {
+            users = users.filter(u => u.user_id === selectedFieldUserId);
+        }
+
+        // Team leader filter → show only that team's field users
+        if (selectedTeamLeaderId && !selectedFieldUserId) {
+            users = users.filter(u => u.team_leader_account_id === selectedTeamLeaderId);
+        }
+
+        // Search filter
+        if (search.trim()) {
+            const q = search.toLowerCase();
+            users = users.filter((u) =>
+                u.name?.toLowerCase().includes(q) ||
+                u.role?.toLowerCase().includes(q)
+            );
+        }
+
+        return users;
+    }, [filteredFieldUsers, selectedFieldUserId, selectedTeamLeaderId, search]);
 
     // Group by role
     const roleGroups = useMemo(() => {

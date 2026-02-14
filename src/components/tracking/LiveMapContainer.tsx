@@ -6,6 +6,8 @@ import {
     TACTICAL_3D_HEADING,
     TACTICAL_3D_TILT,
 } from '@/lib/constants/tracking-constants';
+import { useFilters } from '@/lib/context/FilterContext';
+import { useScope } from '@/lib/context/ScopeContext';
 import { useLiveMapData } from '@/lib/hooks/useLiveMapData';
 import { useUserTrace } from '@/lib/hooks/useUserTrace';
 import type { LiveMapPin } from '@/lib/types/tracking-types';
@@ -25,6 +27,7 @@ import {
     WifiOff,
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActiveUsersList } from './ActiveUsersList';
 import { UserInfoPopup } from './UserInfoPopup';
 import { UserMapMarker } from './UserMapMarker';
 import { UserTracePolyline } from './UserTracePolyline';
@@ -207,6 +210,24 @@ function TacticalModeController({ is3DMode }: { is3DMode: boolean }) {
 }
 
 // ============================================================================
+// FLY-TO CONTROLLER (listens for external camera commands)
+// ============================================================================
+function FlyToController({ target }: { target: { lat: number; lng: number } | null }) {
+    const map = useMap();
+
+    useEffect(() => {
+        if (!map || !target) return;
+        map.panTo(target);
+        const currentZoom = map.getZoom() ?? 10;
+        if (currentZoom < 15) {
+            map.setZoom(17);
+        }
+    }, [map, target]);
+
+    return null;
+}
+
+// ============================================================================
 // MAP CONTENT (ZERO-FLICKER + TRACE + 3D)
 // ============================================================================
 const MapContent = memo(function MapContent({
@@ -343,7 +364,64 @@ export function LiveMapContainer({ clientId }: LiveMapContainerProps) {
     const locale = useLocale();
     const t = useTranslations('tracking');
 
-    const { pins, isLoading, error, isConnected, stats, refetch } = useLiveMapData(clientId);
+    const { pins: allPins, isLoading, error, isConnected, stats: rawStats, refetch } = useLiveMapData(clientId);
+
+    // ── Cascade Filter: scope + selected filters ──
+    const { scope } = useScope();
+    const { filters } = useFilters();
+    const selectedTeamLeaderId = filters.teamLeaderId;
+    const selectedFieldUserId = filters.fieldStaffId;
+
+    // Build the set of user IDs visible in the current hierarchy scope
+    const scopeUserIds = useMemo(() => {
+        const ids = new Set<string>();
+        if (scope?.managers) scope.managers.forEach(m => ids.add(m.id));
+        if (scope?.team_leaders) scope.team_leaders.forEach(tl => ids.add(tl.team_leader_id));
+        if (scope?.field_users) scope.field_users.forEach(fu => ids.add(fu.user_id));
+        return ids;
+    }, [scope?.managers, scope?.team_leaders, scope?.field_users]);
+
+    // Filter pins by hierarchy scope, then by selected filters
+    const pins = useMemo(() => {
+        // 1. Scope filter — only users within hierarchy
+        let result = scopeUserIds.size > 0
+            ? allPins.filter(p => scopeUserIds.has(p.user_id))
+            : allPins;
+
+        // 2. Specific field user selected
+        if (selectedFieldUserId) {
+            result = result.filter(p => p.user_id === selectedFieldUserId);
+        }
+
+        // 3. Team leader selected → show TL + their field users
+        if (selectedTeamLeaderId && !selectedFieldUserId) {
+            const teamUserIds = new Set<string>();
+            teamUserIds.add(selectedTeamLeaderId);
+            if (scope?.field_users) {
+                scope.field_users
+                    .filter(fu => fu.team_leader_account_id === selectedTeamLeaderId)
+                    .forEach(fu => teamUserIds.add(fu.user_id));
+            }
+            result = result.filter(p => teamUserIds.has(p.user_id));
+        }
+
+        return result;
+    }, [allPins, scopeUserIds, selectedFieldUserId, selectedTeamLeaderId, scope?.field_users]);
+
+    // Recalculate stats based on filtered pins
+    const stats = useMemo(() => {
+        const online = pins.filter(p => p.status === 'online').length;
+        const offline = pins.filter(p => p.status === 'offline').length;
+        const mockGps = pins.filter(p => p.is_mock).length;
+        const locationDisabled = pins.filter(p => p.event_type === 'location_disabled').length;
+        const checkedIn = pins.filter(p => p.status === 'online' && p.is_checked_in).length;
+        const idle = pins.filter(p => p.status === 'online' && !p.is_checked_in).length;
+        const lowBattery = pins.filter(p => {
+            const level = p.battery_level;
+            return level !== null && level > 0 && level < 20;
+        }).length;
+        return { total: pins.length, online, offline, mockGps, locationDisabled, lowBattery, checkedIn, idle };
+    }, [pins]);
 
     // 🔍 DIAGNOSTIC: Log pin data for debugging
     useEffect(() => {
@@ -369,6 +447,9 @@ export function LiveMapContainer({ clientId }: LiveMapContainerProps) {
     // Track selected pin by ID (not object) for stable reference
     const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
 
+    // Fly-to target for external camera control (from ActiveUsersList)
+    const [flyToTarget, setFlyToTarget] = useState<{ lat: number; lng: number } | null>(null);
+
     // 3D Tactical Mode state
     const [is3DMode, setIs3DMode] = useState(false);
 
@@ -384,6 +465,14 @@ export function LiveMapContainer({ clientId }: LiveMapContainerProps) {
     const handleInfoWindowClose = useCallback(() => {
         setSelectedPinId(null);
     }, []);
+
+    // Fly to user from ActiveUsersList
+    const handleUserListClick = useCallback((userId: string) => {
+        const pin = pins.find((p) => p.user_id === userId);
+        if (!pin) return;
+        setSelectedPinId(userId);
+        setFlyToTarget({ lat: pin.latitude, lng: pin.longitude });
+    }, [pins]);
 
     const handleToggle3D = useCallback(() => {
         setIs3DMode((prev) => !prev);
@@ -449,9 +538,17 @@ export function LiveMapContainer({ clientId }: LiveMapContainerProps) {
                             locale={locale}
                             is3DMode={is3DMode}
                         />
+                        <FlyToController target={flyToTarget} />
                     </Map>
                 </APIProvider>
             </div>
+
+            {/* Active Users List */}
+            <ActiveUsersList
+                pins={pins}
+                selectedPinId={selectedPinId}
+                onUserClick={handleUserListClick}
+            />
 
             {/* Empty state */}
             {!isLoading && pins.length === 0 && (

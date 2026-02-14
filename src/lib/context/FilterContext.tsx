@@ -19,6 +19,9 @@ interface FilterContextValue {
     setBranchId: (id: string | null) => void;
     setTeamLeaderId: (id: string | null) => void;
     setFieldStaffId: (id: string | null) => void;
+    setRequestStatus: (status: string | null) => void;
+    setCompletionSpeed: (speed: string | null) => void;
+    setVisitStatus: (status: string | null) => void;
     resetFilters: () => void;
     hasActiveFilters: boolean;
 }
@@ -34,6 +37,9 @@ const DEFAULT_FILTERS: ActiveFilters = {
     branchId: null,
     teamLeaderId: null,
     fieldStaffId: null,
+    requestStatus: null,
+    completionSpeed: null,
+    visitStatus: null,
 };
 
 const FilterContext = createContext<FilterContextValue | null>(null);
@@ -69,6 +75,9 @@ export function FilterProvider({ children, syncWithUrl = true }: FilterProviderP
             branchId: searchParams.get('branch'),
             teamLeaderId: searchParams.get('teamLeader'),
             fieldStaffId: searchParams.get('fieldStaff'),
+            requestStatus: searchParams.get('requestStatus'),
+            completionSpeed: searchParams.get('completionSpeed'),
+            visitStatus: searchParams.get('visitStatus'),
         };
     }, [searchParams, syncWithUrl]);
 
@@ -95,6 +104,9 @@ export function FilterProvider({ children, syncWithUrl = true }: FilterProviderP
             if (newFilters.branchId) params.set('branch', newFilters.branchId);
             if (newFilters.teamLeaderId) params.set('teamLeader', newFilters.teamLeaderId);
             if (newFilters.fieldStaffId) params.set('fieldStaff', newFilters.fieldStaffId);
+            if (newFilters.requestStatus) params.set('requestStatus', newFilters.requestStatus);
+            if (newFilters.completionSpeed) params.set('completionSpeed', newFilters.completionSpeed);
+            if (newFilters.visitStatus) params.set('visitStatus', newFilters.visitStatus);
 
             const queryString = params.toString();
             const newUrl = queryString ? `${pathname}?${queryString}` : pathname;
@@ -173,6 +185,33 @@ export function FilterProvider({ children, syncWithUrl = true }: FilterProviderP
         [filters, updateUrl]
     );
 
+    const setRequestStatus = useCallback(
+        (status: string | null) => {
+            const newFilters = { ...filters, requestStatus: status };
+            setFilters(newFilters);
+            updateUrl(newFilters);
+        },
+        [filters, updateUrl]
+    );
+
+    const setCompletionSpeed = useCallback(
+        (speed: string | null) => {
+            const newFilters = { ...filters, completionSpeed: speed };
+            setFilters(newFilters);
+            updateUrl(newFilters);
+        },
+        [filters, updateUrl]
+    );
+
+    const setVisitStatus = useCallback(
+        (status: string | null) => {
+            const newFilters = { ...filters, visitStatus: status };
+            setFilters(newFilters);
+            updateUrl(newFilters);
+        },
+        [filters, updateUrl]
+    );
+
     const resetFilters = useCallback(() => {
         setFilters(DEFAULT_FILTERS);
         updateUrl(DEFAULT_FILTERS);
@@ -190,7 +229,10 @@ export function FilterProvider({ children, syncWithUrl = true }: FilterProviderP
             filters.regionId !== null ||
             filters.branchId !== null ||
             filters.teamLeaderId !== null ||
-            filters.fieldStaffId !== null
+            filters.fieldStaffId !== null ||
+            filters.requestStatus !== null ||
+            filters.completionSpeed !== null ||
+            filters.visitStatus !== null
         );
     }, [filters]);
 
@@ -207,6 +249,9 @@ export function FilterProvider({ children, syncWithUrl = true }: FilterProviderP
             setBranchId,
             setTeamLeaderId,
             setFieldStaffId,
+            setRequestStatus,
+            setCompletionSpeed,
+            setVisitStatus,
             resetFilters,
             hasActiveFilters,
         }),
@@ -219,6 +264,9 @@ export function FilterProvider({ children, syncWithUrl = true }: FilterProviderP
             setBranchId,
             setTeamLeaderId,
             setFieldStaffId,
+            setRequestStatus,
+            setCompletionSpeed,
+            setVisitStatus,
             resetFilters,
             hasActiveFilters,
         ]

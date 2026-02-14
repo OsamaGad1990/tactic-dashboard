@@ -6,7 +6,7 @@
  * Time threshold (in minutes) to consider a user as "online".
  * If last_seen is within this threshold, user is online.
  */
-export const ONLINE_THRESHOLD_MINUTES = 20;
+export const ONLINE_THRESHOLD_MINUTES = 5;
 
 /**
  * Cluster radius in pixels for marker clustering.
@@ -23,14 +23,14 @@ export const CLUSTER_MAX_ZOOM = 15;
  * Fallback polling interval in milliseconds.
  * Used when Realtime subscription fails.
  */
-export const POLL_INTERVAL_MS = 30000;
+export const POLL_INTERVAL_MS = 10000;
 
 /**
  * Mandatory auto-refresh interval in milliseconds.
  * Fires regardless of Realtime connection status.
  * Ensures the map stays alive like a live dashboard feed.
  */
-export const AUTO_REFRESH_INTERVAL_MS = 60000;
+export const AUTO_REFRESH_INTERVAL_MS = 15000;
 
 /**
  * Realtime subscription channel name.

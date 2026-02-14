@@ -7,7 +7,7 @@ import { useCallback, useMemo } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useFilters } from '@/lib/context/FilterContext';
 import { useDashboardFilters, useBranchOptions, ChainFilterOption, RegionFilterOption } from '@/lib/hooks/useHierarchyLogic';
-import { Calendar, Building2, MapPin, Store, Users, UserCircle, RotateCcw, Filter, ChevronDown } from 'lucide-react';
+import { Calendar, Building2, MapPin, Store, Users, UserCircle, RotateCcw, Filter, ChevronDown, Zap, ClipboardList } from 'lucide-react';
 
 // ============================================================================
 // TYPES
@@ -16,6 +16,12 @@ interface GlobalFilterBarProps {
     userAccountId: string;
     clientId: string;
     showHierarchyFilters?: boolean;
+    showLocationFilters?: boolean;
+    showRequestFilters?: boolean;
+    showVisitStatusFilters?: boolean;
+    showDateFilters?: boolean;
+    /** Only show these user IDs in the field staff dropdown (e.g. complaint requester IDs) */
+    allowedFieldStaffIds?: string[];
     className?: string;
 }
 
@@ -116,6 +122,7 @@ function PremiumDateInput({
                     transition-all duration-200
                     focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary
                     shadow-sm hover:shadow-md
+                    cursor-pointer
                     [&::-webkit-calendar-picker-indicator]:opacity-60
                     [&::-webkit-calendar-picker-indicator]:hover:opacity-100
                     [&::-webkit-calendar-picker-indicator]:cursor-pointer
@@ -133,6 +140,11 @@ export function GlobalFilterBar({
     userAccountId,
     clientId,
     showHierarchyFilters = true,
+    showLocationFilters = true,
+    showRequestFilters = false,
+    showVisitStatusFilters = false,
+    showDateFilters = true,
+    allowedFieldStaffIds,
     className = '',
 }: GlobalFilterBarProps) {
     const t = useTranslations('filters');
@@ -147,6 +159,9 @@ export function GlobalFilterBar({
         setBranchId,
         setTeamLeaderId,
         setFieldStaffId,
+        setRequestStatus,
+        setCompletionSpeed,
+        setVisitStatus,
         resetFilters,
         hasActiveFilters,
     } = useFilters();
@@ -207,11 +222,17 @@ export function GlobalFilterBar({
     }, [teamLeaders]);
 
     const fieldStaffOptions = useMemo(() => {
-        return getFieldStaffByTeamLeader(filters.teamLeaderId).map((fs) => ({
+        let staff = getFieldStaffByTeamLeader(filters.teamLeaderId);
+        // If allowedFieldStaffIds is specified, only show those users
+        if (allowedFieldStaffIds && allowedFieldStaffIds.length > 0) {
+            const allowedIds = new Set(allowedFieldStaffIds);
+            staff = staff.filter(fs => allowedIds.has(fs.account_id));
+        }
+        return staff.map((fs) => ({
             value: fs.account_id,
             label: fs.full_name || fs.account_id,
         }));
-    }, [getFieldStaffByTeamLeader, filters.teamLeaderId]);
+    }, [getFieldStaffByTeamLeader, filters.teamLeaderId, allowedFieldStaffIds]);
 
     // ========================================================================
     // HANDLERS
@@ -335,48 +356,57 @@ export function GlobalFilterBar({
             {/* Filters Grid */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
                 {/* Date Range - From */}
-                <PremiumDateInput
-                    value={filters.dateRange.from}
-                    onChange={handleFromDateChange}
-                    label={t('from') || 'From'}
-                />
+                {showDateFilters && (
+                    <>
+                        <PremiumDateInput
+                            value={filters.dateRange.from}
+                            onChange={handleFromDateChange}
+                            label={t('from') || 'From'}
+                        />
 
-                {/* Date Range - To */}
-                <PremiumDateInput
-                    value={filters.dateRange.to}
-                    onChange={handleToDateChange}
-                    label={t('to') || 'To'}
-                />
+                        {/* Date Range - To */}
+                        <PremiumDateInput
+                            value={filters.dateRange.to}
+                            onChange={handleToDateChange}
+                            label={t('to') || 'To'}
+                        />
+                    </>
+                )}
 
-                {/* Chain Filter */}
-                <PremiumSelect
-                    options={chainOptions}
-                    value={filters.chainId}
-                    onChange={setChainId}
-                    placeholder={t('allChains')}
-                    label={t('chain')}
-                    icon={Building2}
-                />
+                {/* Location Filters (Chain / Region / Branch) */}
+                {showLocationFilters && (
+                    <>
+                        {/* Chain Filter */}
+                        <PremiumSelect
+                            options={chainOptions}
+                            value={filters.chainId}
+                            onChange={setChainId}
+                            placeholder={t('allChains')}
+                            label={t('chain')}
+                            icon={Building2}
+                        />
 
-                {/* Region Filter */}
-                <PremiumSelect
-                    options={regionOptions}
-                    value={filters.regionId}
-                    onChange={setRegionId}
-                    placeholder={t('allRegions')}
-                    label={t('region')}
-                    icon={MapPin}
-                />
+                        {/* Region Filter */}
+                        <PremiumSelect
+                            options={regionOptions}
+                            value={filters.regionId}
+                            onChange={setRegionId}
+                            placeholder={t('allRegions')}
+                            label={t('region')}
+                            icon={MapPin}
+                        />
 
-                {/* Branch Filter */}
-                <PremiumSelect
-                    options={branchOptions}
-                    value={filters.branchId}
-                    onChange={setBranchId}
-                    placeholder={t('allBranches')}
-                    label={t('branch')}
-                    icon={Store}
-                />
+                        {/* Branch Filter */}
+                        <PremiumSelect
+                            options={branchOptions}
+                            value={filters.branchId}
+                            onChange={setBranchId}
+                            placeholder={t('allBranches')}
+                            label={t('branch')}
+                            icon={Store}
+                        />
+                    </>
+                )}
 
                 {/* Hierarchy Filters */}
                 {showHierarchyFilters && (
@@ -405,6 +435,55 @@ export function GlobalFilterBar({
                             />
                         )}
                     </>
+                )}
+
+                {/* Request-Specific Filters (Status + Completion Speed) */}
+                {showRequestFilters && (
+                    <>
+                        {/* Request Status Filter */}
+                        <PremiumSelect
+                            options={[
+                                { value: 'approved', label: isArabic ? 'تمت الموافقة' : 'Approved' },
+                                { value: 'rejected', label: isArabic ? 'مرفوض' : 'Rejected' },
+                                { value: 'cancelled', label: isArabic ? 'ملغي' : 'Cancelled' },
+                            ]}
+                            value={filters.requestStatus}
+                            onChange={setRequestStatus}
+                            placeholder={isArabic ? 'كل الحالات' : 'All Statuses'}
+                            label={isArabic ? 'الحالة' : 'Status'}
+                            icon={ClipboardList}
+                        />
+
+                        {/* Completion Speed Filter */}
+                        <PremiumSelect
+                            options={[
+                                { value: 'fast', label: isArabic ? '⚡ سريع (1-5 د)' : '⚡ Fast (1-5m)' },
+                                { value: 'medium', label: isArabic ? '⏱️ متوسط (5-10 د)' : '⏱️ Medium (5-10m)' },
+                                { value: 'slow', label: isArabic ? '🐢 بطيء (+10 د)' : '🐢 Slow (10m+)' },
+                            ]}
+                            value={filters.completionSpeed}
+                            onChange={setCompletionSpeed}
+                            placeholder={isArabic ? 'كل الانجاز' : 'All Speeds'}
+                            label={isArabic ? 'الانجاز' : 'Speed'}
+                            icon={Zap}
+                        />
+                    </>
+                )}
+
+                {/* Visit Status Filters (Yesterday Visits) */}
+                {showVisitStatusFilters && (
+                    <PremiumSelect
+                        options={[
+                            { value: 'completed', label: isArabic ? 'مكتمل' : 'Completed' },
+                            { value: 'cancelled', label: isArabic ? 'ملغي' : 'Cancelled' },
+                            { value: 'pending', label: isArabic ? 'معلّقة' : 'Pending' },
+                        ]}
+                        value={filters.visitStatus}
+                        onChange={setVisitStatus}
+                        placeholder={isArabic ? 'كل الحالات' : 'All Statuses'}
+                        label={isArabic ? 'الحالة' : 'Status'}
+                        icon={ClipboardList}
+                    />
                 )}
             </div>
         </div>

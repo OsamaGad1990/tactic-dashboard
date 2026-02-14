@@ -93,6 +93,9 @@ export interface ActiveFilters {
     branchId: string | null;
     teamLeaderId: string | null;
     fieldStaffId: string | null;
+    requestStatus: string | null;
+    completionSpeed: string | null;
+    visitStatus: string | null;
 }
 
 /**
@@ -106,4 +109,7 @@ export const DEFAULT_FILTERS: ActiveFilters = {
     branchId: null,
     teamLeaderId: null,
     fieldStaffId: null,
+    requestStatus: null,
+    completionSpeed: null,
+    visitStatus: null,
 };

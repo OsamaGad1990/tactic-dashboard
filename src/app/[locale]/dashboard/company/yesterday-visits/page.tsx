@@ -84,7 +84,7 @@ export default async function YesterdayVisitsPage({
 
             {/* Global Filters + Visits Panel */}
             <ScopeProvider clientId={clientId} divisionId={divisionId} managerAccountId={user.id}>
-                <DashboardFilters userAccountId={user.id} clientId={clientId} />
+                <DashboardFilters userAccountId={user.id} clientId={clientId} showVisitStatusFilters={true} showDateFilters={false} />
                 <YesterdayVisitsPanel visits={visits} stats={stats} />
             </ScopeProvider>
         </div>
